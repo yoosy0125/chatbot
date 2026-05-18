@@ -1,8 +1,9 @@
-# DB RAG Codeit Project - YSY 작업 브랜치 안내
+# RAG Codeit Project - YSY 작업 브랜치 안내
 
 이 fork는 팀 공용 repo에 바로 섞지 않고, 개인 작업 브랜치를 분리해서 공유하기 위한 저장소입니다.
 
-팀원이 제 작업을 확인하거나 테스트하려면 `main`이 아니라 `YSY` 브랜치를 받아주세요.
+제가 작업한 RFP RAG 관련 파일은 제 fork의 YSY 브랜치에 통합해두었습니다.
+(확인하거나 테스트하실 분은 아래처럼 받아주세요! `main`이 아니라 `YSY` 브랜치입니다!)
 
 ```bash
 git clone https://github.com/yoosy0125/chatbot.git
@@ -17,6 +18,22 @@ git fetch origin
 git checkout YSY
 git pull origin YSY
 ```
+
+## 2026.05.18일 기준 포함된 내용은
+
+HWP 텍스트 추출/아티팩트 제거, parsing phase1/phase2, v2_p2 JSONL 구조, 확장 평가 모듈, KoE5+Chroma R0~R6 retrieval 실험 노트북입니다.
+
+원본 RFP 데이터, outputs, Chroma DB, embedding cache, prediction JSONL, API key는 GitHub에 올리지 않았습니다.
+필요한 데이터/산출물은 별도 공유 드라이브에서 다운로드하시거나 제게 개별적으로 요청 부탁드립니다.
+
+## 브랜치 요약
+
+main       안내 README만 있는 브랜치
+YSY        최종 통합 작업 브랜치
+hwp        HWP 추출 작업 기록용
+parsing    파싱 작업 기록용
+evaluation 평가 작업 기록용
+rag        리트리벌 작업 기록용
 
 ## Branch Structure
 
