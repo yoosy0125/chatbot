@@ -2,8 +2,12 @@
 
 이 fork는 팀 공용 repo에 바로 섞지 않고, 개인 작업 브랜치를 분리해서 공유하기 위한 저장소입니다.
 
-제가 작업한 RFP RAG 관련 파일은 제 fork의 YSY 브랜치에 통합해두었습니다.
-(확인하거나 테스트하실 분은 아래처럼 받아주세요! `main`이 아니라 `YSY` 브랜치입니다!)
+제가 작업한 RFP RAG 관련 파일은 제 fork의 YSY 브랜치에 통합해두었습니다. 
+
+(확인하거나 테스트하실 분은`main`이 아니라 `YSY` 브랜치를 받아주세요!)
+
+일부 작업만 확인하고 싶으시면 hwp, parsing, evaluation, rag 중 필요한 브랜치만 checkout/pull 하시면 됩니다.
+
 
 ```bash
 git clone https://github.com/yoosy0125/chatbot.git
