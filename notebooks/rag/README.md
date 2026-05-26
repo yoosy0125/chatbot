@@ -1,65 +1,57 @@
-# RAG Notebooks
+# RAG 노트북
 
-P2 corpus를 KoE5로 임베딩하고, Chroma/BM25/RRF/Reranker 조합의 retrieval 성능을 비교하는 단계입니다.
-
-## Files
-
-| 파일 | 용도 |
+| 노트북 | 설명 |
 |---|---|
-| `embedding_retrieval_eval_v2_p2.ipynb` | KoE5 embedding, Chroma indexing, R0~R6 retrieval 평가 |
-| `rag_pipeline_road_map.ipynb` | RAG pipeline 학습/설계 참고 노트북 |
+| `embedding_retrieval_eval_p4_hwpx_125_quickcheck.ipynb` | P4 HWPX 125 corpus의 `chunks_v2_125.jsonl`을 Chroma에 적재하고 KoE5 retrieval 실험을 실행합니다. `RUN_MODE = "smoke"`, `"quick"`, `"exp100"`, `"full"`로 적재/평가 범위를 조절합니다. |
 
-## Required Local Inputs
+## 필수 입력
 
-아래 파일은 용량이 커서 GitHub에 포함하지 않습니다. Google Drive 또는 로컬/VM 디스크에 별도로 배치합니다.
+- `outputs/parsing_p4_hwpx_125/chunks_v2_125.jsonl`
+- `outputs/parsing_p4_hwpx_125/pilot_docs_125.csv`
+- `outputs/parsing_p4_hwpx_125/validation_report.json`
+- `data/eval/*.csv`
 
-```text
-outputs/parsing_p2_250/
-├─ chunks_v2.jsonl   # 기본 corpus
-└─ chunks_v1.jsonl   # R0 baseline
+## 실행 모드
 
-data/eval/
-├─ eval_batch_01.csv
-├─ ...
-└─ eval_batch_25.csv
-```
+- `smoke`: 앞쪽 청크 1,000개만 적재하고 질문 5개로 연결과 기본 동작을 확인합니다.
+- `quick`: 전체 embed 대상 청크를 적재하고 질문 30개로 dense baseline을 빠르게 확인합니다.
+- `exp100`: 전체 embed 대상 청크를 적재하고 100문항 고정 샘플로 6개 retrieval 조건을 비교합니다.
+- `full`: 전체 embed 대상 청크를 적재하고 eligible eval 전체를 dense baseline으로 평가합니다.
 
-`eval_batch_26` 이후는 Q id가 다시 시작되므로 기본 공식 평가에서는 제외합니다.
+## exp100 실험 조건
 
-## Experiments
+- `J0_dense_baseline`: KoE5 dense only baseline
+- `J1_dense_wide`: dense 후보 수를 늘려 multi-doc 후보 누락 여부 확인
+- `J2_bm25_only`: lexical/BM25 단독 검색
+- `J3_dense_bm25_rrf`: dense + BM25 -> RRF, reranker 없음
+- `J4_dense_rerank`: dense 후보 -> reranker
+- `J5_hybrid_rrf_rerank`: dense + BM25 -> RRF -> reranker
 
-| ID | 조건 | 목적 |
-|---|---|---|
-| R0 | v1 clean text dense top5 | clean text baseline |
-| R1 | v2_p2 dense top5 | 기본 dense 검색 |
-| R2 | v2_p2 dense top10 | 후보 수 증가 효과 |
-| R3 | v2_p2 MMR top5, fetch_k=30 | 다양성 반영 |
-| R4 | dense top30 -> reranker top5 | reranker 효과 |
-| R5 | dense top30 + BM25 top30 -> RRF top5 | hybrid 효과 |
-| R6 | dense + BM25 -> RRF top30 -> reranker top5 | hybrid + reranker 최종 후보 |
+## 주요 결과 파일
 
-## Output Policy
-
-아래 실행 결과는 GitHub에 포함하지 않습니다.
+`RUN_MODE="exp100"` 기준 결과는 아래 폴더에 저장됩니다.
 
 ```text
-outputs/retrieval_eval/
-├─ chroma/
-├─ embedding_cache/
-├─ predictions/
-└─ experiment_logs/retrieval_experiments.csv
+outputs/retrieval_quickcheck_p4_hwpx_125/exp100/
 ```
 
-`retrieval_experiments.csv`는 실행할 때마다 append됩니다. 100문항 smoke test와 500문항 공식 범위 결과가 함께 남을 수 있으므로, 최종 비교에는 `num_eval_questions=500`, `eval_scope=canonical_01_25`인 최신 row를 사용합니다.
+주요 파일:
 
-## Evaluation Scope
+- `experiment_summary_exp100.csv`
+- `all_experiment_results_exp100.csv`
+- `all_experiment_contexts_exp100.jsonl`
+- `failure_focus_*.csv`
+- `predictions/*_predictions.jsonl`
 
-- smoke test: `EVAL_SAMPLE_SIZE=30~100`
-- 공식 범위 전체: `EVAL_SAMPLE_SIZE=0`
-- 공식 범위 전체 문항 수: 500개 (`eval_batch_01~25`)
+## 지표 해석 기준
 
-## Runtime Notes
+- `hit_at_5_any`, `mrr_at_5`, `ndcg_at_5`, `doc_recall_at_5`를 전체적으로 함께 봅니다.
+- Single-doc은 `single_doc_mrr_at_5`를, multi-doc은 `multi_doc_ndcg_at_5`, `multi_doc_recall_at_5`, `partial_multi_doc_loss`를 별도로 해석합니다.
+- `candidate_generation_failed_top10`을 엄격한 후보 생성 실패 지표로 사용합니다.
+- `candidate_generation_failed_top30`은 너무 관대할 수 있으므로 참고 지표로만 사용합니다.
 
-Colab/GCP L4 기준으로 설계했습니다. 로컬 RTX4060에서도 가능하지만, reranker 포함 전체 500문항은 시간이 걸릴 수 있습니다.
+## 주의
 
-이미 Chroma/embedding cache가 있으면 KoE5 임베딩 생성 셀을 다시 실행하지 않고, `User parameters -> eval load -> prediction -> evaluation`만 다시 실행하면 됩니다.
+- Chroma DB는 Colab에서는 Google Drive가 아니라 `/content/...` 같은 런타임 로컬 경로에 만드는 것을 권장합니다.
+- 생성된 Chroma DB, embedding cache, quickcheck 결과 파일은 명시적으로 공유해야 하는 경우가 아니면 GitHub에 올리지 않습니다.
+- 첫 셀에는 `chromadb/opentelemetry`, `sentence-transformers/transformers/tokenizers` 버전 충돌 방어 코드가 들어 있습니다.

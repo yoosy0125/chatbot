@@ -1,0 +1,1097 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RFP RAG JSON Corpus 설계 설명</title>
+  <style>
+    :root {
+      --paper: #101827;
+      --bg: #070b13;
+      --ink: #eef4ff;
+      --sub: #c8d3e3;
+      --muted: #98a6ba;
+      --line: #2a374b;
+      --panel: #141f31;
+      --blue: #8cc7ff;
+      --green: #67e8b9;
+      --orange: #ffbf73;
+      --red: #ff8f86;
+      --violet: #c4b5fd;
+      --soft-blue: #10253e;
+      --soft-green: #102d27;
+      --soft-orange: #362413;
+      --soft-red: #35191d;
+      --soft-violet: #211937;
+      --shadow: 0 24px 80px rgba(0, 0, 0, 0.46);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans KR", "Malgun Gothic", Arial, sans-serif;
+      font-size: 17px;
+      line-height: 1.5;
+      letter-spacing: 0;
+    }
+
+    .page {
+      max-width: 1240px;
+      margin: 28px auto;
+      padding: 0;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+    }
+
+    .hero {
+      padding: 34px 40px 28px;
+      border-bottom: 1px solid var(--line);
+      background:
+        linear-gradient(90deg, rgba(140, 199, 255, 0.15), rgba(103, 232, 185, 0.12) 48%, rgba(255, 191, 115, 0.12));
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+      color: var(--blue);
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .eyebrow::before {
+      content: "";
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--blue);
+    }
+
+    h1 {
+      margin: 0;
+      max-width: 920px;
+      font-size: 38px;
+      line-height: 1.18;
+      font-weight: 850;
+    }
+
+    .lead {
+      max-width: 930px;
+      margin: 12px 0 0;
+      color: var(--sub);
+      font-size: 18px;
+    }
+
+    .hero-metrics {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 24px;
+    }
+
+    .metric {
+      min-height: 82px;
+      padding: 13px 14px;
+      border: 1px solid rgba(238, 244, 255, 0.14);
+      background: rgba(16, 24, 39, 0.82);
+    }
+
+    .metric b {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 20px;
+      line-height: 1.1;
+    }
+
+    .metric span {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    main {
+      padding: 30px 40px 38px;
+    }
+
+    section {
+      margin-top: 28px;
+    }
+
+    section:first-child {
+      margin-top: 0;
+    }
+
+    h2 {
+      margin: 0 0 12px;
+      font-size: 24px;
+      line-height: 1.25;
+      font-weight: 850;
+    }
+
+    h3 {
+      margin: 0 0 8px;
+      font-size: 16px;
+      line-height: 1.25;
+      font-weight: 850;
+    }
+
+    p {
+      margin: 0;
+      color: var(--sub);
+      font-size: 15px;
+    }
+
+    .section-head {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 18px;
+      margin-bottom: 14px;
+      border-bottom: 2px solid var(--ink);
+      padding-bottom: 10px;
+    }
+
+    .section-head p {
+      max-width: 600px;
+      text-align: right;
+      font-size: 14px;
+    }
+
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .three-col {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .four-col {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      background: var(--paper);
+      padding: 16px;
+      min-height: 120px;
+    }
+
+    .card.blue { background: var(--soft-blue); border-color: rgba(140, 199, 255, 0.34); }
+    .card.green { background: var(--soft-green); border-color: rgba(103, 232, 185, 0.34); }
+    .card.orange { background: var(--soft-orange); border-color: rgba(255, 191, 115, 0.36); }
+    .card.red { background: var(--soft-red); border-color: rgba(255, 143, 134, 0.38); }
+    .card.violet { background: var(--soft-violet); border-color: rgba(196, 181, 253, 0.36); }
+    .card.gray { background: var(--panel); }
+
+    .card p {
+      font-size: 14px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      padding: 3px 8px;
+      margin-bottom: 10px;
+      border: 1px solid currentColor;
+      font-size: 12px;
+      font-weight: 850;
+      text-transform: uppercase;
+    }
+
+    .badge.blue { color: var(--blue); }
+    .badge.green { color: var(--green); }
+    .badge.orange { color: var(--orange); }
+    .badge.red { color: var(--red); }
+    .badge.violet { color: var(--violet); }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .flow-step {
+      position: relative;
+      padding: 15px 12px;
+      min-height: 112px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+    }
+
+    .flow-step:not(:last-child)::after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      right: -9px;
+      width: 14px;
+      height: 14px;
+      border-top: 2px solid #8792a3;
+      border-right: 2px solid #8792a3;
+      background: var(--paper);
+      transform: translateY(-50%) rotate(45deg);
+      z-index: 2;
+    }
+
+    .flow-step strong {
+      display: block;
+      margin-bottom: 5px;
+      color: var(--ink);
+      font-size: 15px;
+    }
+
+    .flow-step span {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .keyword-grid {
+      display: grid;
+      grid-template-columns: 1.05fr 1fr 1fr;
+      gap: 14px;
+      margin-top: 14px;
+    }
+
+    .keyword-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      margin-top: 10px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 25px;
+      padding: 4px 8px;
+      border: 1px solid #3a4860;
+      background: #111b2c;
+      color: #d7e1f0;
+      font-size: 13px;
+      font-weight: 750;
+    }
+
+    .schema {
+      display: grid;
+      grid-template-columns: 0.9fr 1.1fr;
+      gap: 16px;
+      align-items: stretch;
+    }
+
+    .tree {
+      border: 1px solid var(--line);
+      background: #0f1728;
+      color: #e8edf7;
+      padding: 16px 18px;
+      font-family: Consolas, "SFMono-Regular", "Liberation Mono", monospace;
+      font-size: 13px;
+      line-height: 1.72;
+      overflow-wrap: anywhere;
+    }
+
+    .tree .dim { color: #9aa7bd; }
+    .tree .key { color: #9bd1ff; }
+    .tree .value { color: #b7f7ce; }
+    .tree .warn { color: #ffd18a; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+      table-layout: fixed;
+    }
+
+    th,
+    td {
+      border: 1px solid var(--line);
+      padding: 9px 10px;
+      vertical-align: top;
+      text-align: left;
+      overflow-wrap: anywhere;
+    }
+
+    th {
+      background: #17243a;
+      color: #edf4ff;
+      font-weight: 850;
+    }
+
+    td {
+      color: var(--sub);
+      background: #0f1726;
+    }
+
+    code {
+      font-family: Consolas, "SFMono-Regular", "Liberation Mono", monospace;
+      font-size: 13px;
+      background: #17243a;
+      border: 1px solid #34435a;
+      padding: 1px 4px;
+      color: #e4ecf8;
+    }
+
+    .mini-code {
+      margin-top: 10px;
+      padding: 12px;
+      border: 1px solid #34435a;
+      background: #0d1524;
+      color: #d7e1f0;
+      font-family: Consolas, "SFMono-Regular", "Liberation Mono", monospace;
+      font-size: 13px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .json-example {
+      margin: 14px 0 0;
+      padding: 18px;
+      border: 1px solid #233044;
+      background: #0f1728;
+      color: #e8edf7;
+      font-family: Consolas, "SFMono-Regular", "Liberation Mono", monospace;
+      font-size: 13px;
+      line-height: 1.62;
+      white-space: pre-wrap;
+      overflow-x: auto;
+      overflow-wrap: normal;
+    }
+
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .feature {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      padding: 14px;
+      min-height: 126px;
+    }
+
+    .feature strong {
+      display: block;
+      margin-bottom: 7px;
+      font-size: 15px;
+    }
+
+    .feature span {
+      color: var(--sub);
+      font-size: 13px;
+    }
+
+    .category-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .category {
+      border: 1px solid var(--line);
+      background: #0f1726;
+      padding: 13px;
+      min-height: 106px;
+    }
+
+    .category strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 14px;
+    }
+
+    .category span {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .policy-map {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 12px;
+    }
+
+    .policy-box {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      padding: 14px;
+    }
+
+    .policy-box strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 14px;
+    }
+
+    .policy-box p {
+      font-size: 13px;
+    }
+
+    .generation-lane {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .lane {
+      border: 1px solid var(--line);
+      padding: 16px;
+      background: var(--panel);
+    }
+
+    .lane-row {
+      display: grid;
+      grid-template-columns: 150px 1fr;
+      gap: 10px;
+      padding: 9px 0;
+      border-top: 1px solid var(--line);
+    }
+
+    .lane-row:first-of-type {
+      border-top: 0;
+    }
+
+    .lane-row b {
+      color: var(--ink);
+      font-size: 14px;
+    }
+
+    .lane-row span {
+      color: var(--sub);
+      font-size: 14px;
+    }
+
+    .warning {
+      margin-top: 14px;
+      padding: 14px 16px;
+      border: 1px solid rgba(255, 143, 134, 0.44);
+      background: rgba(255, 143, 134, 0.12);
+      color: #ffd6d2;
+      font-size: 14px;
+      font-weight: 750;
+    }
+
+    .ok {
+      margin-top: 14px;
+      padding: 14px 16px;
+      border: 1px solid rgba(103, 232, 185, 0.38);
+      background: rgba(103, 232, 185, 0.12);
+      color: #c5f7e5;
+      font-size: 14px;
+      font-weight: 750;
+    }
+
+    .footer {
+      margin-top: 30px;
+      padding-top: 18px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 13px;
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    @media (max-width: 980px) {
+      .page {
+        margin: 0;
+        border: 0;
+      }
+
+      .hero,
+      main {
+        padding-left: 20px;
+        padding-right: 20px;
+      }
+
+      .hero-metrics,
+      .flow,
+      .three-col,
+      .four-col,
+      .feature-grid,
+      .category-grid,
+      .keyword-grid,
+      .schema,
+      .policy-map,
+      .generation-lane,
+      .two-col {
+        grid-template-columns: 1fr;
+      }
+
+      .flow-step:not(:last-child)::after {
+        display: none;
+      }
+
+      .section-head {
+        display: block;
+      }
+
+      .section-head p {
+        text-align: left;
+        margin-top: 6px;
+      }
+    }
+
+    @media print {
+      body {
+        background: #fff;
+      }
+
+      .page {
+        margin: 0;
+        border: 0;
+        box-shadow: none;
+      }
+
+      .card,
+      .flow-step,
+      .tree,
+      .policy-box,
+      .lane {
+        break-inside: avoid;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header class="hero">
+      <div class="eyebrow">RFP RAG Corpus Design Brief</div>
+      <h1>검색은 넓게, 답변은 엄격하게: RFP 문서용 JSON 구조화 설계</h1>
+      <p class="lead">
+        이 corpus는 단순히 문서를 1,000자씩 자른 파일이 아니라, RFP 도메인의 질문 패턴을 고려해
+        문서 식별 신호, 핵심 후보값, 표 구조, 답변 사용 정책을 JSON metadata로 분리한 retrieval/generation 실험용 데이터입니다.
+      </p>
+      <div class="hero-metrics">
+        <div class="metric"><b>125 / 250 / 690</b><span>corpus sizes</span></div>
+        <div class="metric"><b>130,304</b><span>max v2 chunks</span></div>
+        <div class="metric"><b>111,856</b><span>max embed-enabled chunks</span></div>
+        <div class="metric"><b>690</b><span>document identity anchors</span></div>
+        <div class="metric"><b>PASS</b><span>all recallguard validations</span></div>
+      </div>
+    </header>
+
+    <main>
+      <section>
+        <div class="section-head">
+          <h2>1. 설계 의도</h2>
+          <p>RFP RAG에서 가장 큰 실패는 정답 문서를 못 찾는 것과, 찾은 문서 안의 잘못된 숫자를 답으로 쓰는 것입니다.</p>
+        </div>
+        <div class="three-col">
+          <article class="card blue">
+            <span class="badge blue">Retrieval</span>
+            <h3>정답 문서를 놓치지 않기</h3>
+            <p>기관명, 사업명, 파일명, 공고번호, 사업유형, alias를 별도 신호로 만들어 문서 회수율을 올립니다.</p>
+          </article>
+          <article class="card green">
+            <span class="badge green">Grounding</span>
+            <h3>답변 근거를 분리하기</h3>
+            <p>예산, 기간, 제출서류, 자격요건 같은 후보값을 fact chunk로 분리해 LLM이 긴 문서 중간을 덜 헤매게 합니다.</p>
+          </article>
+          <article class="card orange">
+            <span class="badge orange">Guardrail</span>
+            <h3>잘못된 값 사용 막기</h3>
+            <p>실적 기준 금액, 지급조건, 공란 서식의 숫자가 사업예산으로 둔갑하지 않도록 answer policy를 metadata에 둡니다.</p>
+          </article>
+        </div>
+
+        <div class="flow">
+          <div class="flow-step"><strong>RFP 원문</strong><span>HWPX/PDF에서 텍스트와 표를 추출</span></div>
+          <div class="flow-step"><strong>구조화</strong><span>text, table, fact_candidates로 분리</span></div>
+          <div class="flow-step"><strong>정책 부여</strong><span>embed 여부와 답변 사용 가능 범위 기록</span></div>
+          <div class="flow-step"><strong>Retrieval</strong><span>넓게 찾아오되 문서 단위 다양성 관리</span></div>
+          <div class="flow-step"><strong>Generation</strong><span>허용된 근거만 최종 답변에 사용</span></div>
+        </div>
+
+        <div class="card gray" style="margin-top: 16px;">
+          <h3>Corpus 규모별 검증 수치</h3>
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 12%">규모</th>
+                <th>문서 수</th>
+                <th>v2 chunk</th>
+                <th>embed 대상</th>
+                <th>document_identity</th>
+                <th>project_budget</th>
+                <th>submission_documents</th>
+                <th>eligibility</th>
+                <th>검증</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>125</code></td>
+                <td>125</td>
+                <td>22,384</td>
+                <td>19,180</td>
+                <td>125</td>
+                <td>77</td>
+                <td>114</td>
+                <td>116</td>
+                <td>PASS</td>
+              </tr>
+              <tr>
+                <td><code>250</code></td>
+                <td>250</td>
+                <td>43,600</td>
+                <td>37,946</td>
+                <td>250</td>
+                <td>170</td>
+                <td>230</td>
+                <td>232</td>
+                <td>PASS</td>
+              </tr>
+              <tr>
+                <td><code>690</code></td>
+                <td>690</td>
+                <td>130,304</td>
+                <td>111,856</td>
+                <td>690</td>
+                <td>498</td>
+                <td>649</td>
+                <td>661</td>
+                <td>PASS</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section>
+        <div class="section-head">
+          <h2>2. RFP 문서 특징과 주목 키워드</h2>
+          <p>RFP는 사업 설명서이면서 동시에 입찰 안내서, 제출서류 목록, 평가표, 서식 모음입니다. 그래서 같은 값도 문맥에 따라 의미가 달라집니다.</p>
+        </div>
+        <div class="feature-grid">
+          <div class="feature">
+            <strong>핵심 정보가 흩어져 있음</strong>
+            <span>사업예산, 기간, 제출서류, 평가기준이 한 섹션에만 있지 않고 본문·표·별지·서식에 나뉘어 등장합니다.</span>
+          </div>
+          <div class="feature">
+            <strong>표 안의 텍스트가 중요함</strong>
+            <span>공공문서 특성상 긴 문장을 표 박스에 넣는 경우가 많아, 표를 버리면 과업범위와 제출서류를 놓칠 수 있습니다.</span>
+          </div>
+          <div class="feature">
+            <strong>같은 숫자의 의미가 다름</strong>
+            <span>10억은 사업예산일 수도, 입찰참가 실적 기준일 수도, 가격제안서 작성 예시일 수도 있습니다.</span>
+          </div>
+          <div class="feature">
+            <strong>기간도 여러 종류가 있음</strong>
+            <span>사업기간, 입찰마감, 제안서 제출기한, 무상유지보수기간, 하자담보책임기간을 분리해야 합니다.</span>
+          </div>
+        </div>
+        <div class="category-grid">
+          <div class="category"><strong>예산 / 사업금액</strong><span>사업비, 추정금액, 부가세 포함 여부, 가격제안서 금액 구분</span></div>
+          <div class="category"><strong>사업기간 / 일정</strong><span>계약일로부터 N개월, 착수일, 완료일, 입찰마감, 제출기한</span></div>
+          <div class="category"><strong>입찰참가자격</strong><span>면허, 실적, 제한조건, 공동수급 가능 여부, 실적 기준 금액</span></div>
+          <div class="category"><strong>제출서류</strong><span>입찰서, 제안서, 가격제안서, 발표자료, 증빙서류 중복 정리</span></div>
+          <div class="category"><strong>평가기준</strong><span>기술/가격 배점, 정량·정성 평가, 협상 기준, 동점자 처리</span></div>
+          <div class="category"><strong>과업범위</strong><span>구축, 고도화, 유지관리, 데이터/AI, 보안, 시스템 연계 요구사항</span></div>
+          <div class="category"><strong>유지보수 / 하자담보</strong><span>무상유지보수기간, 하자보증, 검수 후 책임기간</span></div>
+          <div class="category"><strong>보안 / 산출물</strong><span>개인정보, 보안서약, 착수·중간·완료보고서, 결과 산출물</span></div>
+        </div>
+        <div class="ok">
+          이 특징 때문에 RFP corpus는 단순 chunk text만으로는 부족합니다.
+          원문 근거는 <code>text/table</code>에 남기고, 반복 질문에 필요한 후보값은 <code>fact_candidates</code>로 한 번 더 모아야 합니다.
+        </div>
+        <div class="keyword-grid">
+          <article class="card blue">
+            <span class="badge blue">문서 식별</span>
+            <h3>어느 문서인가?</h3>
+            <p>오타 질문, 축약 질문, 기관명만 주어진 질문에서도 정답 문서를 찾기 위한 신호입니다.</p>
+            <div class="keyword-list">
+              <span class="pill">발주기관</span><span class="pill">사업명</span><span class="pill">원문 파일명</span>
+              <span class="pill">공고번호</span><span class="pill">사업유형</span><span class="pill">alias</span>
+            </div>
+          </article>
+          <article class="card green">
+            <span class="badge green">핵심 사실</span>
+            <h3>무엇을 답해야 하는가?</h3>
+            <p>eval 질문에 자주 등장하는 값입니다. 긴 본문 앞쪽에 요약 후보로 노출되도록 구성했습니다.</p>
+            <div class="keyword-list">
+              <span class="pill">사업예산</span><span class="pill">사업기간</span><span class="pill">입찰마감</span>
+              <span class="pill">제출서류</span><span class="pill">참가자격</span><span class="pill">평가기준</span>
+            </div>
+          </article>
+          <article class="card orange">
+            <span class="badge orange">위험 신호</span>
+            <h3>답으로 쓰면 안 되는가?</h3>
+            <p>검색에는 도움이 되지만 최종 답변값으로 쓰면 오답을 만들 수 있는 후보입니다.</p>
+            <div class="keyword-list">
+              <span class="pill">실적 기준 금액</span><span class="pill">하도급 공란</span><span class="pill">서식 예시</span>
+              <span class="pill">목차</span><span class="pill">지급 비율</span><span class="pill">low confidence</span>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section>
+        <div class="section-head">
+          <h2>3. JSON 전체 구조</h2>
+          <p>Chroma에는 큰 원문 전체를 넣지 않고, 검색에 필요한 content와 작은 metadata만 넣습니다.</p>
+        </div>
+        <div class="schema">
+          <div class="tree" aria-label="JSON structure">
+<span class="dim">{</span>
+  <span class="key">"chunk_id"</span>: <span class="value">"doc_c676..._fact_0001"</span>,
+  <span class="key">"evidence_id"</span>: <span class="value">"EV_8118e4fb98"</span>,
+  <span class="key">"doc_id"</span>: <span class="value">"doc_c6761a6fb2b7"</span>,
+  <span class="key">"doc_key"</span>: <span class="value">"고려대학교_차세대..."</span>,
+  <span class="key">"canonical_doc_id"</span>: <span class="value">"..."</span>,
+  <span class="key">"source_file"</span>: <span class="value">"고려대학교_...pdf"</span>,
+  <span class="key">"source_format"</span>: <span class="value">"hwpx | pdf"</span>,
+  <span class="key">"chunk_type"</span>: <span class="value">"text | table | fact_candidates | toc"</span>,
+  <span class="key">"embed_enabled"</span>: <span class="value">true</span>,
+  <span class="key">"content"</span>: <span class="value">"검색에 넣을 짧은 본문"</span>,
+  <span class="key">"metadata"</span>: <span class="warn">{ ... 답변 정책과 문서 정보 ... }</span>,
+  <span class="key">"source_ref"</span>: <span class="warn">{ ... 원문 lookup key ... }</span>
+<span class="dim">}</span>
+          </div>
+          <div class="card gray">
+            <h3>역할 분리</h3>
+            <table>
+              <thead>
+                <tr><th style="width: 28%">영역</th><th>역할</th></tr>
+              </thead>
+              <tbody>
+                <tr><td><code>content</code></td><td>임베딩되는 검색 본문입니다. 문서명, 섹션, 유형 헤더가 붙어 retrieval이 문맥을 잃지 않게 합니다.</td></tr>
+                <tr><td><code>metadata</code></td><td>검색 후 필터링, 질문 유형별 context 조립, 답변 사용 가능 여부 판단에 쓰는 작은 정보입니다.</td></tr>
+                <tr><td><code>source_ref</code></td><td>긴 원문, 표 원형, 상세 근거를 나중에 조회하기 위한 연결 key입니다. 기본 공유 단계에서는 source store를 열지 않습니다.</td></tr>
+                <tr><td><code>evidence_id</code></td><td>LLM 답변의 citation과 연결할 수 있는 근거 단위 ID입니다.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="card gray" style="margin-top: 16px;">
+          <h3>JSONL record 통 예시</h3>
+          <p>
+            실제 파일은 아래처럼 한 줄에 하나의 JSON record가 들어갑니다.
+            <code>content</code>는 임베딩 본문이고, <code>metadata</code>는 검색 후 해석과 generation 방어에 쓰이며,
+            <code>source_ref</code>는 상세 원문 확장을 위한 연결 정보입니다.
+          </p>
+          <pre class="json-example">{
+  "chunk_id": "doc_c6761a6fb2b7_fact_candidates_fact_0008_part_001_a1b2c3d4e5f6",
+  "evidence_id": "EV_5f1a2b3c4d",
+  "doc_id": "doc_c6761a6fb2b7",
+  "doc_key": "고려대학교_차세대 포털·학사 정보시스템 구축사업",
+  "canonical_doc_id": "canon_c6761a6fb2b7",
+  "canonical_doc_key": "고려대학교_차세대 포털·학사 정보시스템 구축사업",
+  "source_file": "고려대학교_차세대 포털·학사 정보시스템 구축사업.pdf",
+  "source_file_nfc": "고려대학교_차세대 포털·학사 정보시스템 구축사업.pdf",
+  "source_format": "hwpx",
+  "chunk_type": "fact_candidates",
+  "embed_enabled": true,
+  "content": "[문서: 고려대학교_차세대 포털·학사 정보시스템 구축사업.pdf | 사업명: 차세대 포털·학사 정보시스템 구축사업 | 발주기관: 고려대학교 | 섹션: 핵심 후보 정보 > project_budget | 유형: fact_candidates]\n사업예산 : 11,270,000,000원 (V.A.T 포함, 3년 분할 지급)\n근거: I. 사업 개요 > 사업예산",
+  "metadata": {
+    "doc_id": "doc_c6761a6fb2b7",
+    "doc_key": "고려대학교_차세대 포털·학사 정보시스템 구축사업",
+    "source_file": "고려대학교_차세대 포털·학사 정보시스템 구축사업.pdf",
+    "chunk_type": "fact_candidates",
+    "section_path": "핵심 후보 정보 > project_budget",
+    "section_type": "fact",
+    "issuer": "고려대학교",
+    "project_name": "차세대 포털·학사 정보시스템 구축사업",
+    "fact_type": "project_budget",
+    "fact_status": "extracted",
+    "fact_confidence": "high",
+    "retrieval_role": "answer_candidate",
+    "answer_policy": "allow_as_project_budget",
+    "answer_risk_level": "low",
+    "budget_answer_enabled": true,
+    "eligibility_answer_enabled": false,
+    "payment_answer_enabled": false,
+    "is_embeddable": true
+  },
+  "source_ref": {
+    "source_store_id": "src_doc_c6761a6fb2b7_fact_candidates_0008_a1b2c3d4e5f6",
+    "block_id": "Dc6761a6fb2_v2_fact_0008",
+    "part_index": 1,
+    "content_hash": "a1b2c3d4e5f6",
+    "evidence_id": "EV_5f1a2b3c4d"
+  }
+}</pre>
+          <div class="two-col" style="margin-top: 14px;">
+            <div class="card green">
+              <span class="badge green">왜 이렇게 길게 보존하나?</span>
+              <h3>LLM이 근거를 잃지 않게 하기</h3>
+              <p>문서명, 사업명, 발주기관, 섹션, fact_type을 content와 metadata 양쪽에 남겨 검색 결과가 잘려도 최소한의 문맥을 유지합니다.</p>
+            </div>
+            <div class="card orange">
+              <span class="badge orange">왜 정책 필드가 필요한가?</span>
+              <h3>숫자 오답 방지</h3>
+              <p>사업예산, 실적 기준 금액, 지급조건 금액을 모두 검색할 수 있게 하되, 최종 답변에는 허용된 fact만 쓰도록 제한합니다.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div class="section-head">
+          <h2>4. 주요 key와 들어가는 내용</h2>
+          <p>팀원이 실제 코드에서 가장 많이 보게 될 필드 위주로 정리했습니다.</p>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 20%">Key</th>
+              <th style="width: 23%">들어가는 내용</th>
+              <th style="width: 29%">예시</th>
+              <th>사용 위치</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>chunk_id</code></td>
+              <td>검색 결과와 citation을 연결하는 chunk 고유 ID</td>
+              <td><code>doc_c6761a6fb2b7_fact_candidates_fact_0001...</code></td>
+              <td>Chroma ids, generation citation 검증</td>
+            </tr>
+            <tr>
+              <td><code>doc_id</code>, <code>doc_key</code></td>
+              <td>동일 문서의 여러 chunk를 묶는 문서 단위 식별자</td>
+              <td><code>고려대학교_차세대 포털·학사 정보시스템 구축사업</code></td>
+              <td>multi-doc recall, doc-level dedupe, backfill</td>
+            </tr>
+            <tr>
+              <td><code>source_file</code></td>
+              <td>원본 파일명 또는 변환 파일명</td>
+              <td><code>고려대학교_차세대 포털·학사 정보시스템 구축사업.pdf</code></td>
+              <td>사용자 표시, 출처 표기, 문서 그룹핑</td>
+            </tr>
+            <tr>
+              <td><code>chunk_type</code></td>
+              <td>chunk의 구조 유형</td>
+              <td><code>text</code>, <code>table</code>, <code>fact_candidates</code>, <code>toc</code></td>
+              <td>retrieval 후보 해석, context 조립 우선순위</td>
+            </tr>
+            <tr>
+              <td><code>embed_enabled</code></td>
+              <td>임베딩 대상으로 사용할지 여부</td>
+              <td><code>true</code> 또는 <code>false</code></td>
+              <td>Chroma 적재 전 필터링</td>
+            </tr>
+            <tr>
+              <td><code>metadata.section_path</code></td>
+              <td>원문 내 섹션 위치</td>
+              <td><code>사업 개요</code>, <code>제안요청 내용</code>, <code>제출서류</code></td>
+              <td>LLM에게 근거 위치 설명</td>
+            </tr>
+            <tr>
+              <td><code>metadata.fact_type</code></td>
+              <td>추출된 핵심 후보의 의미 유형</td>
+              <td><code>project_budget</code>, <code>project_duration</code>, <code>submission_documents</code>, <code>eligibility</code></td>
+              <td>질문 유형별 context builder</td>
+            </tr>
+            <tr>
+              <td><code>metadata.answer_policy</code></td>
+              <td>이 chunk를 최종 답변 근거로 써도 되는지에 대한 정책</td>
+              <td><code>allow_as_project_budget</code>, <code>route_only_not_final_answer</code></td>
+              <td>generation guardrail</td>
+            </tr>
+            <tr>
+              <td><code>*_answer_enabled</code></td>
+              <td>질문 유형별 답변 사용 허용 flag</td>
+              <td><code>budget_answer_enabled=true</code>, <code>eligibility_answer_enabled=true</code></td>
+              <td>예산/자격/지급조건 오답 방지</td>
+            </tr>
+            <tr>
+              <td><code>source_ref.source_store_id</code></td>
+              <td>긴 원문이나 표 원형을 나중에 조회하는 연결 ID</td>
+              <td><code>src_doc_c6761a6fb2b7_table_...</code></td>
+              <td>고도화 단계의 source store lookup</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section>
+        <div class="section-head">
+          <h2>5. chunk 유형별 예시</h2>
+          <p>같은 문서라도 검색 목적에 따라 text, table, fact 후보로 나뉩니다.</p>
+        </div>
+        <div class="four-col">
+          <article class="card gray">
+            <span class="badge blue">text</span>
+            <h3>본문 흐름</h3>
+            <p>사업 배경, 요구사항, 추진 목표처럼 문장 맥락이 필요한 질문에 사용합니다.</p>
+            <div class="mini-code">chunk_type: text
+section_path: 사업 개요
+content: 사업기간, 사업예산, 추진범위...</div>
+          </article>
+          <article class="card gray">
+            <span class="badge green">table</span>
+            <h3>표 구조</h3>
+            <p>행과 열의 관계가 중요한 RFP 표를 문자열로 뭉개지 않고 table chunk로 분리합니다.</p>
+            <div class="mini-code">chunk_type: table
+table_role: retrieval_signal
+section_path: 제안요청 내용</div>
+          </article>
+          <article class="card gray">
+            <span class="badge orange">fact</span>
+            <h3>핵심 후보값</h3>
+            <p>예산, 기간, 제출서류처럼 바로 답변에 쓰일 가능성이 높은 값을 별도 후보로 둡니다.</p>
+            <div class="mini-code">chunk_type: fact_candidates
+fact_type: project_budget
+answer_policy: allow_as_project_budget</div>
+          </article>
+          <article class="card gray">
+            <span class="badge violet">identity</span>
+            <h3>문서 표지판</h3>
+            <p>문서 회수를 돕지만 숫자나 날짜의 최종 답변 근거로는 쓰지 않습니다.</p>
+            <div class="mini-code">fact_type: document_identity
+retrieval_role: document_identity_anchor
+answer_policy: route_only_not_final_answer</div>
+          </article>
+        </div>
+      </section>
+
+      <section>
+        <div class="section-head">
+          <h2>6. 답변 사용 정책</h2>
+          <p>검색에는 포함하되, 답변에는 제한하는 것이 이 corpus의 핵심 방어 장치입니다.</p>
+        </div>
+        <div class="policy-map">
+          <div class="policy-box">
+            <strong>문서 식별용</strong>
+            <p><code>document_identity</code>는 기관명, 사업명, alias로 정답 문서를 찾는 데 씁니다. 예산, 날짜, 기간의 최종 근거로 쓰면 안 됩니다.</p>
+          </div>
+          <div class="policy-box">
+            <strong>질문 유형 의존</strong>
+            <p><code>threshold_budget</code>은 자격요건 질문에는 유효하지만 사업예산 질문에는 위험합니다. 그래서 <code>eligibility_answer_enabled</code>만 켭니다.</p>
+          </div>
+          <div class="policy-box">
+            <strong>최종 답변 허용</strong>
+            <p><code>project_budget</code>처럼 본문에서 사업예산으로 확인된 값은 <code>budget_answer_enabled</code>를 켜서 예산 질문 근거로 사용합니다.</p>
+          </div>
+        </div>
+        <div class="two-col" style="margin-top: 14px;">
+          <div class="card green">
+            <span class="badge green">Allowed</span>
+            <h3>예산 질문에 사용할 수 있는 값</h3>
+            <div class="mini-code">fact_type: project_budget
+answer_policy: allow_as_project_budget
+budget_answer_enabled: true
+answer_risk_level: low</div>
+          </div>
+          <div class="card red">
+            <span class="badge red">Blocked</span>
+            <h3>예산 질문에서 막아야 하는 값</h3>
+            <div class="mini-code">fact_type: threshold_budget
+answer_policy: allow_for_eligibility_exclude_for_project_budget
+budget_answer_enabled: false
+eligibility_answer_enabled: true</div>
+          </div>
+        </div>
+
+        <div class="four-col" style="margin-top: 14px;">
+          <article class="card blue">
+            <span class="badge blue">예산 질문</span>
+            <h3>“이 사업 예산은 얼마야?”</h3>
+            <p><code>project_budget</code>와 <code>budget_answer_enabled=true</code>인 근거만 최종 금액으로 사용합니다.</p>
+          </article>
+          <article class="card orange">
+            <span class="badge orange">자격 질문</span>
+            <h3>“10억 이상 실적이 필요해?”</h3>
+            <p><code>threshold_budget</code>는 사업예산이 아니라 입찰 자격요건 근거로만 사용합니다.</p>
+          </article>
+          <article class="card green">
+            <span class="badge green">지급 질문</span>
+            <h3>“대금은 어떻게 지급돼?”</h3>
+            <p><code>payment_terms</code>는 지급조건 답변에는 쓰지만, 사업 전체 예산값으로 승격하지 않습니다.</p>
+          </article>
+          <article class="card violet">
+            <span class="badge violet">문서 찾기</span>
+            <h3>“보험개발원 실손보험 사업”</h3>
+            <p><code>document_identity</code>는 정답 문서 찾기용 표지판입니다. 숫자 답변 근거로는 사용하지 않습니다.</p>
+          </article>
+        </div>
+      </section>
+
+      <section>
+        <div class="section-head">
+          <h2>7. Generation 단계 활용과 예시 프롬프트 컨텍스트</h2>
+          <p>LLM에게 긴 chunk를 그대로 던지는 대신, 질문 유형에 맞는 핵심 추출값과 허용 정책을 앞쪽에 배치합니다.</p>
+        </div>
+        <div class="generation-lane">
+          <div class="lane">
+            <h3>질문 유형별 context 조립</h3>
+            <div class="lane-row"><b>예산 질문</b><span><code>project_budget</code>와 <code>budget_answer_enabled=true</code>를 우선 배치</span></div>
+            <div class="lane-row"><b>기간 질문</b><span><code>project_duration</code>, <code>maintenance_period</code>, <code>warranty_period</code>를 구분</span></div>
+            <div class="lane-row"><b>제출서류 질문</b><span><code>submission_documents</code>와 <code>submission_logistics</code>를 함께 확인</span></div>
+            <div class="lane-row"><b>자격요건 질문</b><span><code>eligibility</code>, <code>threshold_budget</code>를 허용하되 예산 답변과 분리</span></div>
+            <div class="lane-row"><b>multi-doc 질문</b><span><code>doc_id</code> 기준으로 문서를 묶어 문서별 대표 근거를 배치</span></div>
+          </div>
+          <div class="lane">
+            <h3>LLM prompt에 들어가는 규칙</h3>
+            <div class="lane-row"><b>근거 제한</b><span>제공된 context 밖의 지식으로 답하지 않게 합니다.</span></div>
+            <div class="lane-row"><b>정책 준수</b><span><code>route_only_not_final_answer</code>는 문서 식별용이며 최종 숫자 근거로 금지합니다.</span></div>
+            <div class="lane-row"><b>Citation</b><span><code>evidence_id</code>, <code>source_file</code>, <code>chunk_id</code>로 답변 근거를 연결합니다.</span></div>
+            <div class="lane-row"><b>불확실성</b><span>정책상 허용된 근거가 없으면 값을 만들지 않고 missing 정보로 남깁니다.</span></div>
+            <div class="lane-row"><b>Backfill</b><span>뒤에서 보강된 문서는 보조 근거로 낮은 우선순위를 부여합니다.</span></div>
+          </div>
+        </div>
+
+        <div class="two-col" style="margin-top: 16px;">
+          <div class="card blue">
+            <span class="badge blue">Budget Prompt Context</span>
+            <h3>예산 질문용 context 예시</h3>
+            <div class="mini-code">[질문]
+고려대학교 차세대 포털·학사 정보시스템 구축사업의 예산은 얼마입니까?
+
+[핵심 추출값 요약]
+- 문서: 고려대학교_차세대 포털·학사 정보시스템 구축사업.pdf
+- fact_type: project_budget
+- answer_policy: allow_as_project_budget
+- budget_answer_enabled: true
+- evidence: 사업예산 : 11,270,000,000원 (V.A.T 포함)
+
+[사용 금지 근거]
+- fact_type: threshold_budget
+- budget_answer_enabled: false
+- 이유: 입찰 자격요건의 실적 기준 금액일 수 있음</div>
+          </div>
+          <div class="card green">
+            <span class="badge green">Expected JSON Answer</span>
+            <h3>LLM 출력 형태 예시</h3>
+            <div class="mini-code">{
+  "answer": "해당 사업의 예산은 11,270,000,000원입니다.",
+  "answer_type": "budget",
+  "confidence": "high",
+  "is_answerable": true,
+  "final_values": {
+    "project_budget": "11,270,000,000원"
+  },
+  "citations": [
+    {
+      "evidence_id": "EV_...",
+      "source_file": "고려대학교_차세대 포털·학사 정보시스템 구축사업.pdf",
+      "chunk_id": "doc_..."
+    }
+  ]
+}</div>
+          </div>
+        </div>
+      </section>
+
+      <div class="footer">
+        <span>RFP RAG structured JSON corpus · parsing_p4_hwpx_{125,250,690}_datafix_recallguard</span>
+        <span>기본 공유: chunks_v2_{N}.jsonl, validation reports, manifest, README · source_store는 고도화 단계에서 별도 공개</span>
+      </div>
+    </main>
+  </div>
+</body>
+</html>
