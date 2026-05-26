@@ -236,6 +236,16 @@ API 사용 시 역할을 분리한다.
 }
 ```
 
+
+### 7.1 Generation Failure-Driven 보강
+- review50 실패사례 분석 결과, generation은 단순 질문유형 분류만으로 부족하므로 `target_slots`, `intent_slots`, deterministic numeric layer를 사용한다.
+- retrieval 결과에 정답 문서가 있어도 다른 문서의 값이 선택될 수 있으므로, source_file/project_name 기반 target-aware value selection과 citation ranking을 적용한다.
+- "문서에 없음" 답변은 실패가 아니라 `answer_status=not_found_in_context`로 분리 관리한다.
+- target 문서의 예산 fact가 없으면 같은 기관의 다른 사업 예산을 대체하지 않고 `source_numeric_missing`으로 진단한다.
+- 예산+요약, 비교+계산처럼 의도가 섞인 질문은 `intent_slots`를 복수로 유지해 한쪽만 답하는 문제를 줄인다.
+- 실제 review50 실패 사례 기반 2차 보강에서는 `"원"` 단독 예산 키워드를 제거하고, 계산형 질문은 `computed_values`가 LLM 숫자 답변을 대체하도록 한다.
+- 복합 질문은 `예산 / 핵심 요약 / 근거` 형식을 요구하며, Q008처럼 target 문서에 예산 fact가 없는 경우에는 틀린 대체값을 만들지 않는다.
+
 ## 8. 평가 지표
 
 기본 평가 지표는 `3_RAG_평가지표_및_해석하기.ipynb`를 따른다.
