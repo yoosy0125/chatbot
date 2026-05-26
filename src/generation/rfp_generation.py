@@ -38,6 +38,56 @@ ANSWER_SCHEMA = {
 
 FINAL_BUDGET_FACT_TYPES = {"budget", "project_budget", "estimated_price", "base_amount"}
 BUDGET_BLOCKED_FACT_TYPES = {"threshold_budget", "payment_terms"}
+STRONG_PROJECT_BUDGET_CONTEXT_KEYWORDS = [
+    "사업예산",
+    "사업 예산",
+    "예산금액",
+    "예산 금액",
+    "사업비",
+    "총사업비",
+    "총 사업비",
+    "소요예산",
+    "소요 예산",
+    "배정예산",
+    "배정 예산",
+    "사업금액",
+    "사업 금액",
+    "계약금액",
+    "계약 금액",
+    "추정가격",
+    "추정 가격",
+    "추정금액",
+    "추정 금액",
+    "발주금액",
+    "발주 금액",
+]
+BLOCKED_BUDGET_FALLBACK_CONTEXT_KEYWORDS = [
+    "기초금액",
+    "기초 금액",
+    "입찰보증",
+    "계약보증",
+    "하자보증",
+    "보증금",
+    "낙찰하한",
+    "예정가격",
+    "가격점수",
+    "평가점수",
+    "선금",
+    "선수금",
+    "잔금",
+    "지급조건",
+    "실적",
+    "참가자격",
+    "입찰참가자격",
+    "미기재",
+    "비공개",
+    "미포함",
+    "예산 미포함",
+    "사업예산 미포함",
+    "없음",
+    "해당없음",
+    "해당 없음",
+]
 
 DEFAULT_GENERATION_CONFIG = {
     "use_source_store": False,
@@ -94,7 +144,16 @@ QUESTION_KEYWORDS = {
         "기초금액",
         "추정가격",
         "얼마",
+        "얼말",
+        "얼말루",
+        "얼마입",
         "액수",
+        "자금",
+        "에산",
+        "총규모",
+        "발주비",
+        "배정예산",
+        "배정 예산",
     ],
     "duration": [
         "사업기간",
@@ -379,6 +438,18 @@ NEGATIVE_CHECK_KEYWORDS = [
 BUDGET_DIFFERENCE_KEYWORDS = ["차액", "차이", "편차", "얼마나 차이"]
 BUDGET_SUM_KEYWORDS = ["합계", "총합", "더하면", "합산", "총액", "모두 더"]
 BUDGET_RATIO_KEYWORDS = ["%", "퍼센트", "비율", "분의", "월급", "단가", "남길", "나머지", "선수금", "잔금"]
+QUESTION_ASPECT_REQUIREMENTS = [
+    {
+        "aspect": "factory_output",
+        "question_markers": ["팩토리", "아웃풋", "생산", "제품"],
+        "answer_markers": ["팩토리", "아웃풋", "생산", "제품", "라인", "공장"],
+    },
+    {
+        "aspect": "field_impact",
+        "question_markers": ["현장"],
+        "answer_markers": ["현장", "실무", "운영", "효율", "소요시간", "검증"],
+    },
+]
 
 PERIOD_SUBTYPE_KEYWORDS = {
     "project_duration": ["사업기간", "수행기간", "계약기간", "계약 체결", "착수일", "계약일"],
@@ -395,7 +466,7 @@ AMOUNT_RE = re.compile(
     r"(?:조\s*원|억원|억\s*원|억|백만원|천만원|만원|천원|원)"
 )
 NUMERIC_AMOUNT_RE = AMOUNT_RE
-PERCENT_RE = re.compile(r"(?<!\d)(\d+(?:\.\d+)?)\s*%")
+PERCENT_RE = re.compile(r"(?<!\d)(\d+(?:\.\d+)?)\s*(?:%|퍼센트)")
 FRACTION_RE = re.compile(r"(\d+)\s*분의\s*(\d+)")
 DATE_RE = re.compile(
     r"(?:20\d{2}\s*[.\-/년]\s*\d{1,2}\s*[.\-/월]\s*\d{1,2}\s*(?:일)?)"
@@ -945,10 +1016,10 @@ def _infer_intent_slots(question: str, question_types: list[str]) -> list[str]:
     q = normalize_text(question)
     intents: list[str] = []
     if "budget" in question_types:
-        if has_any(q, BUDGET_DIFFERENCE_KEYWORDS):
-            intents.append("budget_difference")
-        elif has_any(q, BUDGET_SUM_KEYWORDS):
+        if has_any(q, BUDGET_SUM_KEYWORDS):
             intents.append("budget_sum")
+        elif has_any(q, BUDGET_DIFFERENCE_KEYWORDS):
+            intents.append("budget_difference")
         elif has_any(q, BUDGET_RATIO_KEYWORDS):
             intents.append("budget_ratio")
         else:
@@ -1070,7 +1141,7 @@ def _extract_target_slots(question: str) -> list[dict[str, Any]]:
     for pattern in quote_patterns:
         for match in re.finditer(pattern, question):
             if len(match.groups()) == 2:
-                issuer = _clean_target_label(match.group(1))
+                issuer = _clean_issuer_hint(match.group(1))
                 project = _clean_target_label(match.group(2))
                 label = f"{issuer} {project}".strip()
             else:
@@ -1093,7 +1164,94 @@ def _extract_target_slots(question: str) -> list[dict[str, Any]]:
                     "missing_fields": [],
                 }
             )
+    parenthesized_amount_pattern = re.compile(
+        r"([가-힣A-Za-z0-9㈜㈔&()·\s]{3,90}?)\s*\(\s*(?:"
+        + AMOUNT_RE.pattern
+        + r")\s*\)"
+    )
+    for match in parenthesized_amount_pattern.finditer(question):
+        label = _clean_unquoted_budget_target_label(match.group(1))
+        if not _is_plausible_unquoted_target_label(label):
+            continue
+        key = _normalize_doc_key(label)
+        if len(key) < 3 or key in seen:
+            continue
+        seen.add(key)
+        slots.append(
+            {
+                "target_label": label,
+                "issuer_hint": "",
+                "project_hint": label,
+                "target_tokens": _target_tokens(label),
+                "matched_source_file": "",
+                "match_score": 0.0,
+                "required_fields": [],
+                "missing_fields": [],
+            }
+        )
+
+    budget_target_pattern = re.compile(
+        r"([가-힣A-Za-z0-9㈜㈔&()·\s]{3,90}?)(?:의\s*)?(?:사업\s*)?(?:예산|에산|사업비|발주비|투입\s*금액|자금\s*예산|자금\s*에산)"
+    )
+    for match in budget_target_pattern.finditer(question):
+        label = _clean_unquoted_budget_target_label(match.group(1))
+        if not _is_plausible_unquoted_target_label(label):
+            continue
+        key = _normalize_doc_key(label)
+        if len(key) < 3 or key in seen:
+            continue
+        seen.add(key)
+        slots.append(
+            {
+                "target_label": label,
+                "issuer_hint": "",
+                "project_hint": label,
+                "target_tokens": _target_tokens(label),
+                "matched_source_file": "",
+                "match_score": 0.0,
+                "required_fields": [],
+                "missing_fields": [],
+            }
+        )
     return slots
+
+
+def _clean_unquoted_budget_target_label(value: str) -> str:
+    label = str(value or "")
+    label = re.split(r"[.?!]|(?:그리고)|(?:그러고)|(?:다음)|(?:후)|(?:대하여)", label)[-1]
+    label = re.split(r"(?:에서\s+|(?:의\s*)?(?:경우|관련해서|관련하여|구체적인|구체적|정확히|대략|어느 정도|얼마|얼말|잡혀|있는지|기재))", label)[0]
+    label = _clean_target_label(label)
+    label = re.sub(r"^(?:과|와|및|그리고|또는|혹은)\s*", "", label)
+    label = re.sub(r"^(?:이들|해당|두|각)\s*", "", label)
+    label = re.sub(r"^(?:그|저|이|해당)\s+", "", label)
+    label = re.sub(r"\s+", " ", label)
+    return label.strip(" :;,.()[]")
+
+
+def _is_plausible_unquoted_target_label(label: str) -> bool:
+    label = str(label or "").strip()
+    norm = normalize_text(label)
+    if len(_normalize_doc_key(label)) < 6:
+        return False
+    if AMOUNT_RE.search(label):
+        return False
+    generic_blockers = ["전체", "남은", "잔여", "최종", "액수", "자금", "수수료", "월급", "단가"]
+    if any(blocker in norm for blocker in generic_blockers):
+        return False
+    anchor_markers = [
+        "공사", "공단", "은행", "광역시", "기술원", "연구원", "대학교", "재단", "협회",
+        "시청", "구청", "센터", "기관", "시스템", "플랫폼", "용역", "사업", "조달",
+    ]
+    return any(marker in norm for marker in anchor_markers)
+
+
+def _clean_issuer_hint(value: str) -> str:
+    value = AMOUNT_RE.sub("", str(value or ""))
+    value = re.sub(r"\([^)]*\)", "", value)
+    value = re.split(r"(?:예산|사업비|발주비|투입\s*금액)", value)[-1]
+    parts = re.split(r"\s*(?:과|와|및|그리고|또는|혹은)\s+", value)
+    value = parts[-1] if parts else value
+    return _clean_target_label(value)
 
 
 def _clean_target_label(value: str) -> str:
@@ -1108,7 +1266,11 @@ def _target_tokens(value: str) -> list[str]:
     tokens = [token.casefold() for token in raw_tokens if len(token) >= 2]
     for size in [4, 6, 8, 10]:
         tokens.extend(compact[idx : idx + size] for idx in range(0, max(len(compact) - size + 1, 0), size))
-    stopwords = {"사업", "용역", "구축", "시스템", "정보", "한국", "공사", "재공고", "긴급"}
+    stopwords = {
+        "사업", "용역", "구축", "시스템", "정보", "한국", "공사", "재공고", "긴급",
+        "구체적인", "구체적", "경우", "기재", "있는지", "잡혀", "대략", "예산",
+        "비용", "규모", "자금", "얼마", "얼말", "관련", "관련해서",
+    }
     return _unique_preserve_order(token for token in tokens if token and token not in stopwords)
 
 
@@ -1193,10 +1355,11 @@ def _match_target_slots_to_blocks(
                 slot_blocks.append(block)
         next_slot = dict(slot)
         next_slot["match_score"] = round(best_score, 4)
-        next_slot["matched_source_file"] = best_block.source_file if best_block and best_score >= TARGET_MATCH_THRESHOLD else ""
+        matched_source_file = best_block.source_file if best_block and best_score >= TARGET_MATCH_THRESHOLD else ""
+        next_slot["matched_source_file"] = matched_source_file
         next_slot["required_fields"] = required_fields
         missing_fields = []
-        if "project_budget" in required_fields and not any(block.fact_type in FINAL_BUDGET_FACT_TYPES for block in slot_blocks):
+        if matched_source_file and "project_budget" in required_fields and not _has_project_budget_operand(slot_blocks):
             missing_fields.append("project_budget")
         next_slot["missing_fields"] = missing_fields
         matched.append(next_slot)
@@ -1400,7 +1563,7 @@ def build_context_package(
         analysis.get("target_slots", []),
         analysis.get("period_subtypes", []),
     )
-    computed_values = _compute_deterministic_values(question, analysis)
+    computed_values = _compute_deterministic_values(question, analysis, evidence)
     analysis["computed_values"] = computed_values
 
     max_blocks = (
@@ -1419,6 +1582,7 @@ def build_context_package(
     core_summary["target_slots"] = analysis.get("target_slots", [])
     core_summary["intent_slots"] = analysis.get("intent_slots", [])
     core_summary["intent_plan"] = analysis.get("intent_plan", [])
+    core_summary["intent_evidence"] = _build_intent_evidence_groups(selected, analysis)
     core_summary["computed_values"] = computed_values
     context_text = _format_context_text(core_summary, selected, analysis, max_chars=max_chars)
 
@@ -1495,11 +1659,11 @@ def _build_evidence_blocks(
             retrieval_role=str(chunk.get("retrieval_role") or metadata.get("retrieval_role") or row.get("retrieval_role") or ""),
             answer_policy=str(chunk.get("answer_policy") or metadata.get("answer_policy") or row.get("answer_policy") or ""),
             answer_risk_level=str(chunk.get("answer_risk_level") or metadata.get("answer_risk_level") or row.get("answer_risk_level") or ""),
-            budget_answer_enabled=bool(chunk.get("budget_answer_enabled") or metadata.get("budget_answer_enabled") or row.get("budget_answer_enabled")),
-            eligibility_answer_enabled=bool(chunk.get("eligibility_answer_enabled") or metadata.get("eligibility_answer_enabled") or row.get("eligibility_answer_enabled")),
-            payment_answer_enabled=bool(chunk.get("payment_answer_enabled") or metadata.get("payment_answer_enabled") or row.get("payment_answer_enabled")),
+            budget_answer_enabled=_as_bool(chunk.get("budget_answer_enabled") or metadata.get("budget_answer_enabled") or row.get("budget_answer_enabled")),
+            eligibility_answer_enabled=_as_bool(chunk.get("eligibility_answer_enabled") or metadata.get("eligibility_answer_enabled") or row.get("eligibility_answer_enabled")),
+            payment_answer_enabled=_as_bool(chunk.get("payment_answer_enabled") or metadata.get("payment_answer_enabled") or row.get("payment_answer_enabled")),
             selection_stage=str(row.get("selection_stage") or ""),
-            is_backfilled=bool(row.get("is_backfilled")),
+            is_backfilled=_as_bool(row.get("is_backfilled")),
         )
         blocks.append(block)
     return blocks
@@ -1558,9 +1722,9 @@ def _expand_same_source_fact_blocks(
                 retrieval_role=str(chunk.get("retrieval_role") or metadata.get("retrieval_role") or ""),
                 answer_policy=str(chunk.get("answer_policy") or metadata.get("answer_policy") or ""),
                 answer_risk_level=str(chunk.get("answer_risk_level") or metadata.get("answer_risk_level") or ""),
-                budget_answer_enabled=bool(chunk.get("budget_answer_enabled") or metadata.get("budget_answer_enabled")),
-                eligibility_answer_enabled=bool(chunk.get("eligibility_answer_enabled") or metadata.get("eligibility_answer_enabled")),
-                payment_answer_enabled=bool(chunk.get("payment_answer_enabled") or metadata.get("payment_answer_enabled")),
+                budget_answer_enabled=_as_bool(chunk.get("budget_answer_enabled") or metadata.get("budget_answer_enabled")),
+                eligibility_answer_enabled=_as_bool(chunk.get("eligibility_answer_enabled") or metadata.get("eligibility_answer_enabled")),
+                payment_answer_enabled=_as_bool(chunk.get("payment_answer_enabled") or metadata.get("payment_answer_enabled")),
                 selection_stage="same_source_fact_lookup",
                 is_backfilled=False,
             )
@@ -1597,7 +1761,7 @@ def _score_evidence(row: dict[str, Any], chunk: dict[str, Any], analysis: dict[s
         score += 15.0
     if chunk_type == "table":
         score += 8.0
-    if bool(row.get("is_backfilled")):
+    if _as_bool(row.get("is_backfilled")):
         score -= 12.0
     if fact_type in target_fact_types:
         score += 60.0
@@ -1606,7 +1770,7 @@ def _score_evidence(row: dict[str, Any], chunk: dict[str, Any], analysis: dict[s
         score += 8.0
         if not analysis.get("is_multi_doc") and not analysis.get("needs_synthesis"):
             score -= 45.0
-    budget_answer_enabled = bool(
+    budget_answer_enabled = _as_bool(
         chunk.get("budget_answer_enabled")
         or metadata.get("budget_answer_enabled")
         or row.get("budget_answer_enabled")
@@ -1628,7 +1792,7 @@ def _score_evidence(row: dict[str, Any], chunk: dict[str, Any], analysis: dict[s
             score -= 90.0
         if chunk_type == "fact_candidates" and not budget_answer_enabled:
             score -= 45.0
-    if "eligibility" in question_types and fact_type in {"threshold_budget", "eligibility"} and bool(chunk.get("eligibility_answer_enabled") or metadata.get("eligibility_answer_enabled") or row.get("eligibility_answer_enabled")):
+    if "eligibility" in question_types and fact_type in {"threshold_budget", "eligibility"} and _as_bool(chunk.get("eligibility_answer_enabled") or metadata.get("eligibility_answer_enabled") or row.get("eligibility_answer_enabled")):
         score += 20.0
     for qtype in question_types:
         if qtype in QUESTION_KEYWORDS and has_any(text, QUESTION_KEYWORDS[qtype]):
@@ -1687,7 +1851,7 @@ def _is_target_mismatched_final_value_block(block: EvidenceBlock, analysis: dict
     if not analysis.get("target_slots"):
         return False
     intents = set(analysis.get("intent_slots", []))
-    if not any(intent in intents for intent in {"budget_lookup", "budget_difference", "budget_sum"}):
+    if not any(intent in intents for intent in {"budget_lookup", "budget_difference", "budget_sum", "budget_ratio"}):
         return False
     if block.fact_type not in FINAL_BUDGET_FACT_TYPES:
         return False
@@ -1744,6 +1908,56 @@ def _build_core_summary(
         "document_count": len(normalized_docs),
         "documents": normalized_docs,
     }
+
+
+def _build_intent_evidence_groups(
+    blocks: list[EvidenceBlock],
+    analysis: dict[str, Any],
+    *,
+    max_blocks_per_intent: int = 4,
+) -> list[dict[str, Any]]:
+    groups: list[dict[str, Any]] = []
+    target_slots = analysis.get("target_slots", [])
+    for plan in analysis.get("intent_plan", []) or []:
+        required_fact_types = {str(value) for value in plan.get("required_fact_types", []) or []}
+        preferred_chunk_types = [str(value) for value in plan.get("preferred_chunk_types", []) or []]
+        ranked: list[tuple[float, EvidenceBlock]] = []
+        for block in blocks:
+            score = block.score
+            if block.fact_type in required_fact_types:
+                score += 120.0
+            if block.chunk_type in preferred_chunk_types:
+                score += 20.0
+            if target_slots and _best_target_match_score(_doc_match_text(block=block), target_slots) >= TARGET_MATCH_THRESHOLD:
+                score += 30.0
+            if plan.get("requires_computation") and _is_allowed_budget_operand_block(block):
+                score += 40.0
+            ranked.append((score, block))
+
+        evidence = []
+        for _, block in sorted(ranked, key=lambda item: item[0], reverse=True)[:max_blocks_per_intent]:
+            evidence.append(
+                {
+                    "source_file": block.source_file,
+                    "chunk_id": block.chunk_id,
+                    "evidence_id": block.evidence_id,
+                    "chunk_type": block.chunk_type,
+                    "fact_type": block.fact_type,
+                    "section_path": block.section_path,
+                    "value": _extract_short_value(block.text, block.fact_type) if block.fact_type else truncate_text(block.text, 120),
+                }
+            )
+        groups.append(
+            {
+                "intent_id": plan.get("intent_id", ""),
+                "intent": plan.get("intent", ""),
+                "answer_section": plan.get("answer_section", ""),
+                "required_fact_types": list(required_fact_types),
+                "preferred_chunk_types": preferred_chunk_types,
+                "evidence": evidence,
+            }
+        )
+    return groups
 
 
 def _extract_short_value(text: str, fact_type: str) -> str:
@@ -1815,6 +2029,22 @@ def _format_context_text(
         lines.append("[computed values - 코드 계산 결과]")
         lines.append(json.dumps(core_summary.get("computed_values"), ensure_ascii=False))
 
+    if core_summary.get("intent_evidence"):
+        lines.append("")
+        lines.append("[intent별 근거 묶음]")
+        for group in core_summary.get("intent_evidence", []):
+            required = ", ".join(group.get("required_fact_types", []) or []) or "-"
+            lines.append(
+                f"- {group.get('intent_id', '')} {group.get('answer_section', '')}: "
+                f"intent={group.get('intent', '')} | required_fact_types={required}"
+            )
+            for evidence in group.get("evidence", [])[:3]:
+                lines.append(
+                    f"  · source_file={evidence.get('source_file', '')} | "
+                    f"chunk_id={evidence.get('chunk_id', '')} | "
+                    f"fact_type={evidence.get('fact_type') or '-'} | value={evidence.get('value', '')}"
+                )
+
     for doc in core_summary.get("documents", []):
         lines.append("")
         lines.append(f"- 문서: {doc['source_file']}")
@@ -1873,10 +2103,11 @@ def build_prompt(context_package: dict[str, Any]) -> list[dict[str, str]]:
 - [intent plan - 질문 안의 하위 요청]이 있으면 intent_id별 요청을 빠짐없이 답한다.
 - 답변은 가능한 한 intent plan의 answer_section 순서에 맞춰 작성한다. 예: `예산: ...\n핵심 요약: ...\n근거: ...`
 - required_fact_types에 해당하는 근거가 없으면 다른 문서나 다른 fact_type 값으로 대체하지 말고 missing_info에 남긴다.
-- [computed values - 코드 계산 결과]가 있으면 숫자와 계산 결과를 변경하지 말고 그대로 사용한다.
+- [computed values - 코드 계산 결과]가 있으면 숫자, formula, steps, 계산 결과를 변경하지 말고 그대로 사용한다.
+- computed values에 steps가 있으면 answer에 `계산 과정:`을 포함하고 단계별 계산식과 최종 결론을 함께 작성한다.
 - 의도 슬롯이 여러 개이면 모든 의도에 답한다. 예: budget_lookup + purpose_summary이면 예산과 핵심 요약을 모두 포함한다.
 - budget_lookup + purpose_summary 질문은 answer를 반드시 `예산: ...\n핵심 요약: ...\n근거: ...` 형식으로 작성한다.
-- budget_difference/budget_sum/budget_ratio 질문은 계산하지 말고 [computed values - 코드 계산 결과]가 있으면 그 결과를 최종 답변으로 사용한다.
+- budget_difference/budget_sum/budget_ratio 질문은 직접 계산하지 말고 [computed values - 코드 계산 결과]의 steps와 answer를 최종 답변으로 사용한다.
 - target slots가 있으면 matched_source_file이 일치하는 문서의 값만 최종값으로 사용한다. 같은 기관의 다른 사업 예산을 대체값으로 쓰지 않는다.
 - 근거가 부족하면 is_answerable=false, answer_status=insufficient_context 또는 not_found_in_context, confidence=low로 둔다.
 - 문서에 없다는 답변은 answer_status=not_found_in_context로 표시한다.
@@ -1960,6 +2191,13 @@ def postprocess_answer(raw_text: str, context_package: dict[str, Any]) -> dict[s
         )
     if missing_intents or _is_multi_intent_incomplete(normalized, context_package):
         failure_tags.append("multi_intent_incomplete")
+    missing_aspects = _missing_question_aspects(normalized, context_package)
+    if missing_aspects:
+        normalized["missing_info"] = _unique_preserve_order(
+            list(normalized.get("missing_info", []))
+            + [f"missing_question_aspect:{aspect}" for aspect in missing_aspects]
+        )
+        failure_tags.append("question_aspect_incomplete")
     if normalized.get("answer_status") == "not_found_in_context" and not normalized.get("citations"):
         failure_tags.append("negative_answer_no_checked_evidence")
     if _has_target_doc_coverage_missing(context_package):
@@ -1978,9 +2216,49 @@ def postprocess_answer(raw_text: str, context_package: dict[str, Any]) -> dict[s
     normalized["_answer_policy_valid"] = policy_report["policy_valid"]
     normalized["_answer_policy_violations"] = policy_report["policy_violations"]
     normalized["_missing_intents"] = missing_intents
-    normalized["_failure_tags"] = _unique_preserve_order(failure_tags)
+    failure_tags = _unique_preserve_order(failure_tags)
+    normalized = _downgrade_confidence_for_failure_tags(normalized, failure_tags)
+    normalized["_failure_tags"] = failure_tags
     normalized["_question_analysis"] = context_package.get("question_analysis", {})
     return normalized
+
+
+SEVERE_FAILURE_TAGS = {
+    "llm_hallucination_risk",
+    "source_numeric_missing",
+    "derived_numeric_mismatch",
+    "wrong_field_selection",
+    "wrong_target_field_selection",
+    "citation_wrong_target",
+    "insufficient_evidence",
+    "gt_numeric_mismatch",
+    "gt_expected_answer_but_model_not_found",
+}
+MEDIUM_FAILURE_TAGS = {
+    "multi_intent_incomplete",
+    "incomplete_multi_doc",
+    "gt_semantic_overlap_low",
+    "question_aspect_incomplete",
+    "target_doc_coverage_missing",
+}
+CONFIDENCE_RANK = {"low": 0, "medium": 1, "high": 2}
+
+
+def _downgrade_confidence_for_failure_tags(answer: dict[str, Any], failure_tags: Iterable[str]) -> dict[str, Any]:
+    tags = set(failure_tags or [])
+    current = str(answer.get("confidence") or "low")
+    target = current if current in CONFIDENCE_RANK else "low"
+    if tags & SEVERE_FAILURE_TAGS:
+        target = "low"
+    elif target == "high" and tags & MEDIUM_FAILURE_TAGS:
+        target = "medium"
+    if CONFIDENCE_RANK.get(target, 0) < CONFIDENCE_RANK.get(current, 0):
+        answer["confidence"] = target
+        answer.setdefault("warnings", [])
+        answer["warnings"] = _unique_preserve_order(
+            list(answer.get("warnings", [])) + [f"confidence_downgraded_by_guard:{current}->{target}"]
+        )
+    return answer
 
 
 def _parse_json_answer(raw_text: str) -> tuple[dict[str, Any], bool, str]:
@@ -2099,7 +2377,7 @@ def _apply_deterministic_postprocess(answer: dict[str, Any], context_package: di
         if computed_answer:
             analysis = context_package.get("question_analysis", {})
             is_budget_answer = answer.get("answer_type") == "budget" or analysis.get("answer_type") == "budget"
-            summary_intents = {"purpose_summary", "requirements_summary"}
+            summary_intents = {"purpose_summary", "requirements_summary", "multi_doc_comparison"}
             has_summary_intent = bool(set(analysis.get("intent_slots", [])) & summary_intents)
             if is_budget_answer and not has_summary_intent:
                 answer["answer"] = computed_answer
@@ -2112,10 +2390,10 @@ def _apply_deterministic_postprocess(answer: dict[str, Any], context_package: di
         analysis = context_package.get("question_analysis", {})
         has_budget_intent = any(
             intent in set(analysis.get("intent_slots", []))
-            for intent in {"budget_lookup", "budget_difference", "budget_sum"}
+            for intent in {"budget_lookup", "budget_difference", "budget_sum", "budget_ratio"}
         )
         if has_budget_intent:
-            missing_targets = _unique_preserve_order([
+            missing_targets = _dedupe_overlapping_target_labels([
                 slot.get("target_label", "")
                 for slot in analysis.get("target_slots", [])
                 if "project_budget" in (slot.get("missing_fields") or [])
@@ -2133,6 +2411,21 @@ def _apply_deterministic_postprocess(answer: dict[str, Any], context_package: di
     if not answer.get("answer_status"):
         answer["answer_status"] = "answered" if answer.get("is_answerable") else "not_found_in_context"
     return answer
+
+
+def _dedupe_overlapping_target_labels(labels: Iterable[Any]) -> list[str]:
+    deduped: list[str] = []
+    norm_labels: list[str] = []
+    for label in labels:
+        label_text = str(label or "").strip()
+        norm = _normalize_doc_key(label_text)
+        if not label_text or not norm:
+            continue
+        if any(norm in existing or existing in norm for existing in norm_labels):
+            continue
+        deduped.append(label_text)
+        norm_labels.append(norm)
+    return deduped
 
 
 def _attach_deterministic_citations(
@@ -2326,7 +2619,7 @@ def _validate_citations(
         else:
             invalid.append("non_dict_citation")
             continue
-        if evidence_id and evidence_id not in valid_evidence_ids:
+        if evidence_id and evidence_id not in valid_evidence_ids and evidence_id not in valid_chunk_ids:
             invalid.append(f"unknown_evidence_id:{evidence_id}")
         if not evidence_id and not chunk_id and not source_file and not evidence_text:
             invalid.append("unparseable_citation")
@@ -2390,60 +2683,348 @@ def _validate_numeric_grounding(
     }
 
 
-def _compute_deterministic_values(question: str, analysis: dict[str, Any]) -> dict[str, Any]:
+def _question_amounts_are_approximate(question: str) -> bool:
+    q = normalize_text(question)
+    if has_any(q, ["약", "대략", "정도", "가량", "쯤", "대강"]):
+        return True
+    return bool(re.search(r"\d+\.\d+\s*(?:억|백만원|천만원|만원)", str(question or "")))
+
+
+def _compute_deterministic_values(
+    question: str,
+    analysis: dict[str, Any],
+    evidence_blocks: list[EvidenceBlock] | None = None,
+) -> dict[str, Any]:
     intents = set(analysis.get("intent_slots", []))
-    amounts = _extract_amount_values(question)
+    question_amounts = _tag_amount_operands(_extract_amount_values(question), source="question")
+    context_amounts = _collect_context_budget_operands(evidence_blocks or [], analysis)
     percents = [float(value) / 100.0 for value in PERCENT_RE.findall(question)]
     result: float | None = None
     operation = ""
-    if "budget_difference" in intents and len(amounts) >= 2:
-        result = abs(amounts[0]["won"] - amounts[1]["won"])
-        operation = "difference"
-    elif "budget_sum" in intents and len(amounts) >= 2:
-        result = sum(item["won"] for item in amounts)
-        operation = "sum"
-    elif "budget_ratio" in intents and amounts:
-        base = amounts[0]["won"]
-        q = normalize_text(question)
-        fraction = _extract_last_fraction(question) if "나머지" in q else _extract_first_fraction(question)
-        if "월급" in q:
-            people_match = re.search(r"(\d+)\s*명", question)
-            month_match = re.search(r"(\d+)\s*개월", question)
-            first_percent = percents[0] if percents else 0.0
-            if people_match and month_match:
-                result = base * (1 - first_percent) / (int(people_match.group(1)) * int(month_match.group(1)))
-                operation = "monthly_unit_after_deduction"
-        elif "남길" in q and len(percents) >= 2:
-            result = base * (1 - percents[0]) * (1 - percents[1])
-            operation = "remaining_after_two_percent_deductions"
-        elif "단가" in q or "라이선스" in q:
-            count_match = re.search(r"(\d+)\s*개", question)
-            first_percent = percents[0] if percents else 0.0
-            fraction = fraction or (1.0, 0.0)
-            if count_match:
-                spent_fraction = fraction[1] / fraction[0]
-                result = base * (1 - first_percent) * (1 - spent_fraction) / int(count_match.group(1))
-                operation = "unit_price_after_deduction_and_fraction_spend"
-        elif fraction and any(token in q for token in ["나머지", "신규", "코딩", "개발"]):
-            result = base * fraction[1] / fraction[0]
-            operation = "fraction_of_budget"
-        elif percents:
-            result = base * percents[0]
-            operation = "percent_of_budget"
-        else:
-            if fraction:
+    formula = ""
+    steps: list[str] = []
+    operand_sources: list[dict[str, Any]] = []
+
+    def choose_amounts(required_count: int, *, prefer_context: bool = False) -> list[dict[str, Any]]:
+        if prefer_context and len(context_amounts) >= required_count:
+            return context_amounts[:required_count]
+        if len(question_amounts) >= required_count:
+            return question_amounts[:required_count]
+        return _dedupe_amount_operands(question_amounts + context_amounts)[:required_count]
+
+    prefer_context_for_target_math = bool(analysis.get("target_slots") and len(context_amounts) >= 2)
+    prefer_context_for_target_ratio = bool(
+        analysis.get("target_slots")
+        and context_amounts
+        and _question_amounts_are_approximate(question)
+    )
+
+    if "budget_difference" in intents:
+        operands = choose_amounts(2, prefer_context=prefer_context_for_target_math)
+        if len(operands) >= 2:
+            left, right = operands[0]["won"], operands[1]["won"]
+            result = abs(left - right)
+            operation = "difference"
+            bigger, smaller = (left, right) if left >= right else (right, left)
+            steps = [f"{_format_won(bigger)} - {_format_won(smaller)} = {_format_won(result)}"]
+            formula = f"abs({operands[0]['raw']} - {operands[1]['raw']})"
+            operand_sources = operands
+    elif "budget_sum" in intents:
+        operands = choose_amounts(2, prefer_context=prefer_context_for_target_math)
+        if len(operands) >= 2:
+            result = sum(item["won"] for item in operands)
+            operation = "sum"
+            joined = " + ".join(_format_won(item["won"]) for item in operands)
+            steps = [f"{joined} = {_format_won(result)}"]
+            formula = " + ".join(item["raw"] for item in operands)
+            operand_sources = operands
+    elif "budget_ratio" in intents:
+        operands = choose_amounts(1, prefer_context=prefer_context_for_target_ratio)
+        if operands:
+            base = operands[0]["won"]
+            q = normalize_text(question)
+            fraction = _extract_last_fraction(question) if "나머지" in q else _extract_first_fraction(question)
+            if "월급" in q:
+                people_match = re.search(r"(\d+)\s*명", question)
+                month_match = re.search(r"(\d+)\s*개월", question)
+                first_percent = percents[0] if percents else 0.0
+                if people_match and month_match:
+                    people = int(people_match.group(1))
+                    months = int(month_match.group(1))
+                    first_deduction = base * first_percent
+                    remaining = base - first_deduction
+                    per_person = remaining / people
+                    result = per_person / months
+                    operation = "monthly_unit_after_deduction"
+                    formula = f"({operands[0]['raw']} × (1 - {_format_percent(first_percent)})) ÷ {people}명 ÷ {months}개월"
+                    steps = [
+                        f"{_format_won(base)} × {_format_percent(first_percent)} = {_format_won(first_deduction)}",
+                        f"{_format_won(base)} - {_format_won(first_deduction)} = {_format_won(remaining)}",
+                        f"{_format_won(remaining)} ÷ {people}명 = {_format_won(per_person)}",
+                        f"{_format_won(per_person)} ÷ {months}개월 = {_format_won(result)}",
+                    ]
+            elif "남길" in q and len(percents) >= 2:
+                first_deduction = base * percents[0]
+                remaining = base - first_deduction
+                second_deduction = remaining * percents[1]
+                result = remaining - second_deduction
+                operation = "remaining_after_two_percent_deductions"
+                formula = f"{operands[0]['raw']} × (1 - {_format_percent(percents[0])}) × (1 - {_format_percent(percents[1])})"
+                steps = [
+                    f"{_format_won(base)} × {_format_percent(percents[0])} = {_format_won(first_deduction)}",
+                    f"{_format_won(base)} - {_format_won(first_deduction)} = {_format_won(remaining)}",
+                    f"{_format_won(remaining)} × {_format_percent(percents[1])} = {_format_won(second_deduction)}",
+                    f"{_format_won(remaining)} - {_format_won(second_deduction)} = {_format_won(result)}",
+                ]
+            elif "단가" in q or "라이선스" in q:
+                count_match = re.search(r"(\d+)\s*개", question)
+                first_percent = percents[0] if percents else 0.0
+                fraction = fraction or (1, 0)
+                if count_match:
+                    count = int(count_match.group(1))
+                    spent_fraction = fraction[1] / fraction[0]
+                    first_deduction = base * first_percent
+                    remaining = base - first_deduction
+                    fraction_spend = remaining * spent_fraction
+                    final_pool = remaining - fraction_spend
+                    result = final_pool / count
+                    operation = "unit_price_after_deduction_and_fraction_spend"
+                    formula = f"({operands[0]['raw']} × (1 - {_format_percent(first_percent)}) × (1 - {fraction[1]}/{fraction[0]})) ÷ {count}개"
+                    steps = [
+                        f"{_format_won(base)} × {_format_percent(first_percent)} = {_format_won(first_deduction)}",
+                        f"{_format_won(base)} - {_format_won(first_deduction)} = {_format_won(remaining)}",
+                        f"{_format_won(remaining)} × {fraction[1]}/{fraction[0]} = {_format_won(fraction_spend)}",
+                        f"{_format_won(remaining)} - {_format_won(fraction_spend)} = {_format_won(final_pool)}",
+                        f"{_format_won(final_pool)} ÷ {count}개 = {_format_won(result)}",
+                    ]
+            elif fraction and any(token in q for token in ["나머지", "신규", "코딩", "개발"]):
                 result = base * fraction[1] / fraction[0]
                 operation = "fraction_of_budget"
+                formula = f"{operands[0]['raw']} × {fraction[1]}/{fraction[0]}"
+                steps = [f"{_format_won(base)} × {fraction[1]}/{fraction[0]} = {_format_won(result)}"]
+            elif percents:
+                result = base * percents[0]
+                operation = "percent_of_budget"
+                formula = f"{operands[0]['raw']} × {_format_percent(percents[0])}"
+                steps = [f"{_format_won(base)} × {_format_percent(percents[0])} = {_format_won(result)}"]
+            elif fraction:
+                result = base * fraction[1] / fraction[0]
+                operation = "fraction_of_budget"
+                formula = f"{operands[0]['raw']} × {fraction[1]}/{fraction[0]}"
+                steps = [f"{_format_won(base)} × {fraction[1]}/{fraction[0]} = {_format_won(result)}"]
+            operand_sources = operands
     if result is None:
-        return {"operation": "", "operands": amounts, "result": None, "answer": ""}
+        return {
+            "operation": "",
+            "operands": question_amounts,
+            "context_operands": context_amounts,
+            "operand_sources": [],
+            "percents": percents,
+            "formula": "",
+            "steps": [],
+            "result": None,
+            "answer": "",
+        }
     rounded = int(round(result))
+    rounded_steps = [_normalize_step_amounts(step) for step in steps]
     return {
         "operation": operation,
-        "operands": amounts,
+        "operands": operand_sources,
+        "context_operands": context_amounts,
+        "operand_sources": operand_sources,
         "percents": percents,
+        "formula": formula,
+        "steps": rounded_steps,
         "result": rounded,
-        "answer": f"계산 결과는 {_format_won(rounded)}입니다.",
+        "answer": _format_calculation_answer(operation, rounded_steps, rounded),
     }
+
+
+def _tag_amount_operands(amounts: list[dict[str, Any]], *, source: str) -> list[dict[str, Any]]:
+    return [
+        {
+            **amount,
+            "source": source,
+            "source_file": "",
+            "fact_type": "",
+            "chunk_id": "",
+            "target_label": "",
+        }
+        for amount in amounts
+    ]
+
+
+def _collect_context_budget_operands(
+    blocks: list[EvidenceBlock],
+    analysis: dict[str, Any],
+) -> list[dict[str, Any]]:
+    target_slots = [slot for slot in analysis.get("target_slots", []) if slot.get("matched_source_file")]
+    if not target_slots:
+        return []
+    operands: list[dict[str, Any]] = []
+    for slot in target_slots:
+        matched_source = _normalize_doc_key(slot.get("matched_source_file", ""))
+        source_blocks = [
+            block
+            for block in blocks
+            if _normalize_doc_key(block.source_file) == matched_source
+        ]
+        allowed_blocks = [block for block in source_blocks if _is_allowed_budget_operand_block(block)]
+        fallback_blocks = [block for block in source_blocks if _is_budget_fallback_candidate_block(block)]
+        ranked_candidates = sorted(
+            [(block, "context") for block in allowed_blocks] + [(block, "context_fallback") for block in fallback_blocks],
+            key=lambda item: item[0].score + (50.0 if item[1] == "context" else 0.0),
+            reverse=True,
+        )
+        for block, source_kind in ranked_candidates:
+            amount = _extract_project_budget_amount_from_block(block, allow_fallback=source_kind == "context_fallback")
+            if not amount:
+                continue
+            operands.append(
+                {
+                    **amount,
+                    "source": source_kind,
+                    "source_file": block.source_file,
+                    "fact_type": block.fact_type,
+                    "chunk_id": block.chunk_id,
+                    "target_label": slot.get("target_label", ""),
+                    "budget_operand_role": amount.get("budget_operand_role", "project_budget"),
+                }
+            )
+            break
+    return _dedupe_amount_operands(operands)
+
+
+def _has_project_budget_operand(blocks: list[EvidenceBlock]) -> bool:
+    return any(
+        _is_allowed_budget_operand_block(block)
+        or _is_budget_fallback_candidate_block(block)
+        for block in blocks
+    )
+
+
+def _is_budget_fallback_candidate_block(block: EvidenceBlock) -> bool:
+    if block.fact_type in BUDGET_BLOCKED_FACT_TYPES:
+        return False
+    if block.answer_policy == "route_only_not_final_answer":
+        return False
+    if block.fact_type in FINAL_BUDGET_FACT_TYPES and not _is_allowed_budget_operand_block(block):
+        return False
+    if block.chunk_type not in {"text", "table", "fact_candidates", ""}:
+        return False
+    return _extract_project_budget_amount_from_block(block, allow_fallback=True) is not None
+
+
+def _extract_project_budget_amount_from_block(block: EvidenceBlock, *, allow_fallback: bool) -> dict[str, Any] | None:
+    if not allow_fallback and not _is_allowed_budget_operand_block(block):
+        return None
+    if _is_allowed_budget_operand_block(block):
+        amount = _extract_first_amount(block.text)
+        if amount:
+            amount["budget_operand_role"] = "project_budget_fact"
+        return amount
+    return _extract_strong_budget_context_amount(block.text)
+
+
+def _extract_first_amount(text: str) -> dict[str, Any] | None:
+    amounts = _extract_amount_values(text)
+    return amounts[0] if amounts else None
+
+
+def _extract_strong_budget_context_amount(text: str) -> dict[str, Any] | None:
+    raw_text = str(text or "")
+    normalized = normalize_text(raw_text)
+    if not AMOUNT_RE.search(raw_text):
+        return None
+    candidates: list[tuple[int, int, dict[str, Any]]] = []
+    for match in AMOUNT_RE.finditer(raw_text):
+        start = max(0, match.start() - 80)
+        end = min(len(raw_text), match.end() + 80)
+        window = raw_text[start:end]
+        normalized_window = normalize_text(window)
+        if not has_any(normalized_window, STRONG_PROJECT_BUDGET_CONTEXT_KEYWORDS):
+            continue
+        if has_any(normalized_window, BLOCKED_BUDGET_FALLBACK_CONTEXT_KEYWORDS):
+            continue
+        amount = _amount_to_won(match.group(0))
+        if amount is None or amount <= 10_000:
+            continue
+        priority = _budget_context_priority(normalized_window)
+        candidates.append((priority, -match.start(), {"raw": match.group(0), "won": amount, "budget_operand_role": "strong_text_or_table_budget_context"}))
+    if not candidates:
+        return None
+    candidates.sort(reverse=True)
+    return candidates[0][2]
+
+
+def _budget_context_priority(normalized_window: str) -> int:
+    priority_keywords = [
+        "사업예산",
+        "사업 예산",
+        "사업비",
+        "총사업비",
+        "총 사업비",
+        "사업금액",
+        "사업 금액",
+        "소요예산",
+        "소요 예산",
+        "추정가격",
+        "추정 가격",
+    ]
+    return max((len(priority_keywords) - idx for idx, keyword in enumerate(priority_keywords) if keyword in normalized_window), default=0)
+
+
+def _is_allowed_budget_operand_block(block: EvidenceBlock) -> bool:
+    if block.fact_type not in FINAL_BUDGET_FACT_TYPES:
+        return False
+    if block.fact_type in BUDGET_BLOCKED_FACT_TYPES:
+        return False
+    if block.answer_policy == "route_only_not_final_answer":
+        return False
+    return _as_bool(block.budget_answer_enabled) or block.answer_policy == "allow_as_project_budget"
+
+
+def _dedupe_amount_operands(operands: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen = set()
+    deduped = []
+    for operand in operands:
+        key = (
+            operand.get("won"),
+            operand.get("source"),
+            operand.get("source_file"),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(operand)
+    return deduped
+
+
+def _format_percent(value: float) -> str:
+    return f"{value * 100:g}%"
+
+
+def _normalize_step_amounts(step: str) -> str:
+    return re.sub(
+        r"(?<![\d,])(\d+)(?:\.\d+)?원",
+        lambda match: _format_won(match.group(1)),
+        step,
+    )
+
+
+def _format_calculation_answer(operation: str, steps: list[str], result: int) -> str:
+    step_lines = [f"{index}. {step}" for index, step in enumerate(steps, start=1)]
+    if operation == "difference":
+        conclusion = f"따라서 차액은 {_format_won(result)}입니다."
+    elif operation == "sum":
+        conclusion = f"따라서 합계는 {_format_won(result)}입니다."
+    elif operation == "monthly_unit_after_deduction":
+        conclusion = f"따라서 1인당 월 급여 환산액은 {_format_won(result)}입니다."
+    elif operation == "unit_price_after_deduction_and_fraction_spend":
+        conclusion = f"따라서 1개당 배분 단가는 {_format_won(result)}입니다."
+    else:
+        conclusion = f"따라서 계산 결과는 {_format_won(result)}입니다."
+    return "계산 과정:\n" + "\n".join(step_lines + [conclusion])
 
 
 def _extract_amount_values(text: str) -> list[dict[str, Any]]:
@@ -2602,6 +3183,21 @@ def _answer_covers_intent(answer_text: str, intent: str) -> bool:
     return True
 
 
+def _missing_question_aspects(answer: dict[str, Any], context_package: dict[str, Any]) -> list[str]:
+    if answer.get("answer_status") in {"not_found_in_context", "insufficient_context", "retrieval_context_missing"}:
+        return []
+    intents = set(context_package.get("question_analysis", {}).get("intent_slots", []))
+    if not ({"purpose_summary", "requirements_summary"} & intents):
+        return []
+    question_text = normalize_text(context_package.get("question", ""))
+    answer_text = normalize_text(answer.get("answer", ""))
+    missing: list[str] = []
+    for rule in QUESTION_ASPECT_REQUIREMENTS:
+        if has_any(question_text, rule["question_markers"]) and not has_any(answer_text, rule["answer_markers"]):
+            missing.append(str(rule["aspect"]))
+    return _unique_preserve_order(missing)
+
+
 def _is_multi_intent_incomplete(answer: dict[str, Any], context_package: dict[str, Any]) -> bool:
     if answer.get("answer_status") in {"not_found_in_context", "insufficient_context", "retrieval_context_missing"}:
         return False
@@ -2672,7 +3268,100 @@ def enrich_generation_record(
         "use_source_store": context_package.get("use_source_store", False),
     }
     record.update(answer)
+    record = _annotate_ground_truth_review(record)
     return record
+
+
+REVIEW_AMOUNT_RE = re.compile(
+    r"(?<!\d)(?:\d[\d,]*(?:\.\d+)?)\s*"
+    r"(?:조\s*원|억원|억\s*원|억|백만원|천만원|만원|천원|원)"
+)
+NEGATIVE_GT_MARKERS = ["미기재", "없", "않", "비공개", "확인되지", "명시되어 있지", "무관", "상정되지", "발견되지"]
+NOT_FOUND_ANSWER_MARKERS = ["알 수 없습니다", "확인할 수 없습니다", "근거를 확인할 수 없어", "문서에 없습니다", "명시되어 있지 않습니다", "찾을 수 없습니다"]
+REVIEW_TOKEN_STOPWORDS = {
+    "사업", "문서", "해당", "관련", "대한", "위한", "으로", "에서", "하고", "하는", "합니다",
+    "있습니다", "입니다", "것으로", "그리고", "또는", "통해", "기반", "구축", "용역",
+}
+
+
+def _annotate_ground_truth_review(record: dict[str, Any]) -> dict[str, Any]:
+    """Add review-only diagnostics when an eval ground truth is available."""
+    ground_truth = str(record.get("ground_truth") or "").strip()
+    if not ground_truth:
+        return record
+    answer = str(record.get("answer") or "")
+    existing_tags = list(record.get("_failure_tags", []))
+    review_tags: list[str] = []
+
+    if _is_budget_review_record(record):
+        gt_amounts = _extract_amount_won_values_for_review(ground_truth)
+        answer_amounts = _extract_amount_won_values_for_review(answer)
+        if gt_amounts and answer_amounts and not _amount_lists_overlap(gt_amounts, answer_amounts):
+            review_tags.append("gt_numeric_mismatch")
+
+    if _looks_like_not_found_answer(answer) and not _looks_like_negative_ground_truth(ground_truth):
+        review_tags.append("gt_expected_answer_but_model_not_found")
+
+    if not existing_tags and not review_tags and str(record.get("confidence") or "") == "high":
+        if not _looks_like_negative_ground_truth(ground_truth) and not _amounts_match_answer_and_gt(answer, ground_truth):
+            recall = _review_token_recall(answer, ground_truth)
+            if recall < 0.12:
+                review_tags.append("gt_semantic_overlap_low")
+
+    if review_tags:
+        record["_gt_review_tags"] = _unique_preserve_order(list(record.get("_gt_review_tags", [])) + review_tags)
+        record["_failure_tags"] = _unique_preserve_order(existing_tags + review_tags)
+        record = _downgrade_confidence_for_failure_tags(record, record["_failure_tags"])
+    return record
+
+
+def _is_budget_review_record(record: dict[str, Any]) -> bool:
+    intents = set(record.get("intent_slots", []) or [])
+    answer_type = str(record.get("answer_type") or "")
+    question = normalize_text(record.get("question", ""))
+    return answer_type == "budget" or any(intent.startswith("budget") for intent in intents) or has_any(question, QUESTION_KEYWORDS["budget"])
+
+
+def _extract_amount_won_values_for_review(text: str) -> list[int]:
+    values: list[int] = []
+    for match in REVIEW_AMOUNT_RE.finditer(str(text or "")):
+        won = _amount_to_won(match.group(0))
+        if won is not None:
+            values.append(won)
+    return _unique_preserve_order(values)
+
+
+def _amount_lists_overlap(left: list[int], right: list[int]) -> bool:
+    return any(abs(int(a) - int(b)) <= 1 for a in left for b in right)
+
+
+def _amounts_match_answer_and_gt(answer: str, ground_truth: str) -> bool:
+    gt_amounts = _extract_amount_won_values_for_review(ground_truth)
+    answer_amounts = _extract_amount_won_values_for_review(answer)
+    return bool(gt_amounts and answer_amounts and _amount_lists_overlap(gt_amounts, answer_amounts))
+
+
+def _looks_like_negative_ground_truth(text: str) -> bool:
+    normalized = normalize_text(text)
+    return has_any(normalized, NEGATIVE_GT_MARKERS)
+
+
+def _looks_like_not_found_answer(text: str) -> bool:
+    normalized = normalize_text(text)
+    return has_any(normalized, NOT_FOUND_ANSWER_MARKERS)
+
+
+def _review_tokens(text: str) -> set[str]:
+    tokens = re.findall(r"[가-힣A-Za-z0-9]{2,}", normalize_text(text))
+    return {token for token in tokens if token not in REVIEW_TOKEN_STOPWORDS and not token.isdigit()}
+
+
+def _review_token_recall(answer: str, ground_truth: str) -> float:
+    gt_tokens = _review_tokens(ground_truth)
+    if not gt_tokens:
+        return 1.0
+    answer_tokens = _review_tokens(answer)
+    return len(gt_tokens & answer_tokens) / len(gt_tokens)
 
 
 def create_generation_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
@@ -2801,6 +3490,7 @@ def build_review_rows(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "missing_info": json.dumps(record.get("missing_info", []), ensure_ascii=False),
                 "warnings": json.dumps(record.get("warnings", []), ensure_ascii=False),
                 "failure_tags": json.dumps(record.get("_failure_tags", []), ensure_ascii=False),
+                "gt_review_tags": json.dumps(record.get("_gt_review_tags", []), ensure_ascii=False),
                 "missing_intents": json.dumps(record.get("_missing_intents", []), ensure_ascii=False),
                 "valid_json": record.get("_valid_json", ""),
                 "recovered_answer": record.get("_recovered_answer", ""),
@@ -2837,6 +3527,7 @@ def build_llm_answer_review_rows(records: list[dict[str, Any]]) -> list[dict[str
                 "recovered_answer": record.get("_recovered_answer", ""),
                 "parse_error_type": record.get("_parse_error_type", ""),
                 "failure_tags": json.dumps(record.get("_failure_tags", []), ensure_ascii=False),
+                "gt_review_tags": json.dumps(record.get("_gt_review_tags", []), ensure_ascii=False),
                 "warnings": json.dumps(record.get("warnings", []), ensure_ascii=False),
                 "missing_info": json.dumps(record.get("missing_info", []), ensure_ascii=False),
             }
@@ -2893,6 +3584,7 @@ def write_llm_answer_review_html(path: str | Path, rows: list[dict[str, Any]]) -
     <span>intent_slots: {html.escape(str(row.get('intent_slots', '')))}</span>
     <span>missing_intents: {html.escape(str(row.get('missing_intents', '')))}</span>
     <span>failure_tags: {html.escape(str(row.get('failure_tags', '')))}</span>
+    <span>gt_review_tags: {html.escape(str(row.get('gt_review_tags', '')))}</span>
     <span>warnings: {html.escape(str(row.get('warnings', '')))}</span>
   </section>
 </article>
@@ -2906,26 +3598,27 @@ def write_llm_answer_review_html(path: str | Path, rows: list[dict[str, Any]]) -
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>LLM Answer Review</title>
 <style>
-  body {{ margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f6f7f9; color: #1f2933; }}
-  header {{ position: sticky; top: 0; z-index: 2; padding: 18px 28px; background: #ffffff; border-bottom: 1px solid #d9dee7; }}
-  h1 {{ margin: 0; font-size: 22px; }}
-  .summary {{ margin-top: 6px; color: #596579; font-size: 14px; }}
-  main {{ padding: 24px; display: grid; gap: 18px; }}
-  .card {{ background: #ffffff; border: 1px solid #d9dee7; border-left: 6px solid #9aa8ba; border-radius: 8px; padding: 18px; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05); }}
-  .card.valid-json {{ border-left-color: #2f855a; }}
-  .card.recovered {{ border-left-color: #b7791f; }}
-  .card.invalid-json {{ border-left-color: #c53030; }}
-  .card-header {{ display: flex; gap: 10px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }}
-  .qid {{ font-weight: 700; font-size: 18px; }}
-  .badge {{ padding: 3px 8px; border-radius: 999px; background: #eef2f7; font-size: 12px; font-weight: 700; }}
-  .meta {{ color: #596579; font-size: 13px; }}
-  h2 {{ margin: 14px 0 6px; font-size: 13px; color: #334155; text-transform: uppercase; letter-spacing: 0.04em; }}
-  pre {{ margin: 0; padding: 12px; white-space: pre-wrap; overflow-wrap: anywhere; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; line-height: 1.55; font-size: 13px; }}
-  .grid {{ display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 14px; }}
-  .docs {{ margin: 6px 0 0; color: #596579; font-size: 13px; }}
-  .diagnostics {{ display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; color: #475569; font-size: 12px; }}
-  .diagnostics span {{ padding: 4px 7px; background: #f1f5f9; border-radius: 5px; }}
-  @media (max-width: 900px) {{ .grid {{ grid-template-columns: 1fr; }} main {{ padding: 14px; }} }}
+  :root {{ color-scheme: dark; }}
+  body {{ margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans KR", sans-serif; background: #0b1020; color: #e8edf7; font-size: 17px; }}
+  header {{ position: sticky; top: 0; z-index: 2; padding: 22px 32px; background: rgba(9, 14, 28, 0.96); border-bottom: 1px solid #29344f; backdrop-filter: blur(10px); }}
+  h1 {{ margin: 0; font-size: 30px; letter-spacing: -0.02em; }}
+  .summary {{ margin-top: 8px; color: #aab6cf; font-size: 16px; }}
+  main {{ padding: 28px; display: grid; gap: 22px; }}
+  .card {{ background: #121a2d; border: 1px solid #2a3653; border-left: 8px solid #7f91b8; border-radius: 14px; padding: 24px; box-shadow: 0 18px 40px rgba(0, 0, 0, 0.28); }}
+  .card.valid-json {{ border-left-color: #50d890; }}
+  .card.recovered {{ border-left-color: #f2b84b; }}
+  .card.invalid-json {{ border-left-color: #ff6b6b; }}
+  .card-header {{ display: flex; gap: 12px; align-items: center; margin-bottom: 18px; flex-wrap: wrap; }}
+  .qid {{ font-weight: 850; font-size: 24px; color: #ffffff; }}
+  .badge {{ padding: 5px 11px; border-radius: 999px; background: #22304c; color: #dbe7ff; font-size: 14px; font-weight: 800; }}
+  .meta {{ color: #b8c4dc; font-size: 15px; }}
+  h2 {{ margin: 18px 0 8px; font-size: 15px; color: #9fc2ff; text-transform: uppercase; letter-spacing: 0.05em; }}
+  pre {{ margin: 0; padding: 16px; white-space: pre-wrap; overflow-wrap: anywhere; background: #080d19; border: 1px solid #26334f; border-radius: 10px; line-height: 1.68; font-size: 16px; color: #edf3ff; }}
+  .grid {{ display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 18px; }}
+  .docs {{ margin: 8px 0 0; color: #aab6cf; font-size: 15px; }}
+  .diagnostics {{ display: flex; gap: 9px; flex-wrap: wrap; margin-top: 16px; color: #c0c9dc; font-size: 14px; }}
+  .diagnostics span {{ padding: 6px 9px; background: #1b2740; border: 1px solid #2d3b59; border-radius: 7px; }}
+  @media (max-width: 900px) {{ .grid {{ grid-template-columns: 1fr; }} main {{ padding: 16px; }} header {{ padding: 18px; }} pre {{ font-size: 15px; }} }}
 </style>
 </head>
 <body>
@@ -3066,6 +3759,16 @@ def _write_dict_rows_csv(path: str | Path, rows: list[dict[str, Any]]) -> None:
 def _mean_bool(values: Iterable[Any]) -> float:
     vals = [1.0 if bool(value) else 0.0 for value in values]
     return sum(vals) / len(vals) if vals else math.nan
+
+
+def _as_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        return value.strip().casefold() in {"1", "true", "t", "yes", "y"}
+    return bool(value)
 
 
 def _safe_float(value: Any, default: float = 0.0) -> float:
