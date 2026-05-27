@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>P4 목표 보정(goalfix) 데이터 업데이트 설명</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b1020;
+      --panel: #121a2c;
+      --panel2: #18243a;
+      --text: #eef4ff;
+      --muted: #aab7cc;
+      --line: #2a3a5c;
+      --accent: #67e8f9;
+      --accent2: #a7f3d0;
+      --warn: #fbbf24;
+      --bad: #fca5a5;
+      --code: #0f172a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: radial-gradient(circle at top left, #13213e 0, #0b1020 36%, #080b12 100%);
+      color: var(--text);
+      font-family: "Pretendard", "Segoe UI", "Malgun Gothic", system-ui, sans-serif;
+      font-size: 19px;
+      line-height: 1.65;
+    }
+    .wrap { width: min(1180px, calc(100% - 48px)); margin: 0 auto; padding: 44px 0 72px; }
+    .hero { padding: 34px; border: 1px solid var(--line); border-radius: 18px; background: rgba(18,26,44,.86); }
+    h1 { margin: 0 0 14px; font-size: clamp(38px, 5vw, 58px); line-height: 1.12; letter-spacing: 0; }
+    h2 { margin: 48px 0 18px; font-size: 32px; letter-spacing: 0; }
+    h3 { margin: 28px 0 10px; font-size: 24px; letter-spacing: 0; }
+    p { margin: 10px 0; }
+    .sub { color: var(--muted); font-size: 21px; }
+    .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+    .card { background: rgba(18,26,44,.88); border: 1px solid var(--line); border-radius: 14px; padding: 20px; }
+    .card strong { display:block; font-size: 26px; margin-bottom: 6px; color: var(--accent2); }
+    .badge { display:inline-block; padding: 4px 10px; border:1px solid var(--line); border-radius: 999px; color: var(--accent); font-size: 16px; margin-right: 8px; }
+    table { width: 100%; border-collapse: collapse; overflow: hidden; border-radius: 12px; background: var(--panel); }
+    th, td { border: 1px solid var(--line); padding: 14px 16px; vertical-align: top; }
+    th { background: var(--panel2); color: var(--accent2); font-size: 18px; text-align: left; }
+    code, pre { font-family: "Cascadia Code", "D2Coding", Consolas, monospace; }
+    code { color: var(--accent); }
+    pre { white-space: pre-wrap; word-break: break-word; background: var(--code); border: 1px solid var(--line); border-radius: 14px; padding: 20px; font-size: 16px; line-height: 1.55; }
+    .flow { display:grid; grid-template-columns: repeat(5, minmax(0,1fr)); gap: 12px; }
+    .flow div { background: var(--panel); border:1px solid var(--line); border-radius: 14px; padding: 16px; min-height: 116px; }
+    .flow b { color: var(--accent2); display:block; margin-bottom: 8px; }
+    .note { border-left: 5px solid var(--warn); padding: 14px 18px; background: rgba(251,191,36,.08); border-radius: 10px; }
+    .good { color: var(--accent2); }
+    .warn { color: var(--warn); }
+    @media (max-width: 860px) {
+      body { font-size: 17px; }
+      .wrap { width: min(100% - 28px, 1180px); padding-top: 28px; }
+      .grid, .flow { grid-template-columns: 1fr; }
+      h1 { font-size: 38px; }
+      h2 { font-size: 28px; }
+    }
+    </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="hero">
+      <span class="badge">P4 HWPX 125</span><span class="badge">목표 보정(goalfix)</span>
+      <h1>데이터가 어떻게 바뀌었는지 한 번에 보기</h1>
+      <p class="sub">검색(retrieval)과 생성(generation)이 같은 데이터를 다르게 쓰기 때문에, 이번 업데이트는 “많이 저장”보다 “의미를 정확히 구분”하는 쪽에 집중했습니다.</p>
+    </section>
+
+    <section class="grid" aria-label="summary">
+      <div class="card"><strong>22,994</strong><span>최종 청크(chunk) 수</span></div>
+      <div class="card"><strong>610</strong><span>새로 보강한 청크(chunk)</span></div>
+      <div class="card"><strong>64.11 MiB</strong><span>검색용 제이슨엘(JSONL) 크기</span></div>
+    </section>
+
+    <h2>1. 왜 다시 보강했나</h2>
+    <p>생성(generation) 결과를 검토해보니, 정답 문서는 찾아왔는데 금액의 의미를 잘못 해석하거나, 요구사항처럼 긴 문맥이 필요한 질문에서 답변이 흐려지는 문제가 있었습니다.</p>
+    <div class="note">핵심은 “숫자가 있다”가 아니라 “이 숫자가 실제 사업예산인지, 자격요건 기준금액인지, 지급조건인지”를 구분하는 것입니다.</div>
+
+    <h2>2. 데이터 흐름</h2>
+    <div class="flow">
+      <div><b>원본 문서</b>한글(HWP)을 한글 XML(HWPX)로 변환해 문단과 표를 더 안정적으로 분리합니다.</div>
+      <div><b>구조화</b>일반 텍스트(text), 표(table), 핵심 후보(fact_candidates)를 나눕니다.</div>
+      <div><b>의미 보강</b>금액, 기간, 요구사항, 사업범위 같은 정보를 별도 청크(chunk)로 한 번 더 만듭니다.</div>
+      <div><b>크로마(Chroma)</b><code>content</code>를 문서(documents), <code>metadata</code>를 메타데이터(metadatas)로 적재합니다.</div>
+      <div><b>답변 생성</b>질문 유형에 맞는 근거를 골라 대형 언어 모델(LLM)에 넘깁니다.</div>
+    </div>
+
+    <h2>3. 데이터는 이렇게 생겼다</h2>
+    <h3>예산 근거 예시</h3>
+    <pre>{
+  &quot;chunk_id&quot;: &quot;doc_cf048e995a9d_fact_candidates_fact_0003_part_001_8e286bad8ce1&quot;,
+  &quot;doc_id&quot;: &quot;doc_cf048e995a9d&quot;,
+  &quot;source_file&quot;: &quot;(사)벤처기업협회_2024년 벤처확인종합관리시스템 기능 고도화 용역사업 .hwp&quot;,
+  &quot;chunk_type&quot;: &quot;fact_candidates&quot;,
+  &quot;embed_enabled&quot;: true,
+  &quot;content&quot;: &quot;[문서: (사)벤처기업협회_2024년 벤처확인종합관리시스템 기능 고도화 용역사업 .hwp | 사업명: 2024년 벤처확인종합관리시스템 기능 고도화 용역사업 | 발주기관: (사)벤처기업협회 | 섹션: 핵심 후보 정보 &gt; project_budget | 유형: fact_candidates]\n실제 사업예산/사업금액/사업비/소요예산: 사업금액: 352,000,000원 | KRW: 352000000 | budget_type: project_budget&quot;,
+  &quot;metadata&quot;: {
+    &quot;source_file&quot;: &quot;(사)벤처기업협회_2024년 벤처확인종합관리시스템 기능 고도화 용역사업 .hwp&quot;,
+    &quot;chunk_type&quot;: &quot;fact_candidates&quot;,
+    &quot;section_path&quot;: &quot;핵심 후보 정보 &gt; project_budget&quot;,
+    &quot;fact_type&quot;: &quot;project_budget&quot;,
+    &quot;amount_krw&quot;: 352000000,
+    &quot;budget_answer_enabled&quot;: &quot;True&quot;,
+    &quot;answer_policy&quot;: &quot;allow_as_project_budget&quot;
+  },
+  &quot;source_ref&quot;: {
+    &quot;source_store_id&quot;: &quot;src_doc_cf048e995a9d_fact_candidates_fact_0003_8e286bad8ce1&quot;,
+    &quot;block_id&quot;: &quot;Dcf048e995a_v2_fact_0003_project_budget&quot;,
+    &quot;part_index&quot;: 1,
+    &quot;content_hash&quot;: &quot;8e286bad8ce1&quot;,
+    &quot;evidence_id&quot;: &quot;EV_c4cc7a432a&quot;
+  }
+}</pre>
+    <h3>표 청크(table chunk) 예시</h3>
+    <pre>{
+  &quot;chunk_id&quot;: &quot;doc_cf048e995a9d_table_table_0001_part_001_b7ab37ddf1f0&quot;,
+  &quot;doc_id&quot;: &quot;doc_cf048e995a9d&quot;,
+  &quot;source_file&quot;: &quot;(사)벤처기업협회_2024년 벤처확인종합관리시스템 기능 고도화 용역사업 .hwp&quot;,
+  &quot;chunk_type&quot;: &quot;table&quot;,
+  &quot;embed_enabled&quot;: false,
+  &quot;content&quot;: &quot;[문서: (사)벤처기업협회_2024년 벤처확인종합관리시스템 기능 고도화 용역사업 .hwp | 사업명: 2024년 벤처확인종합관리시스템 기능 고도화 용역사업 | 발주기관: (사)벤처기업협회 | 섹션: 문서 시작 | 유형: table]\n[표 섹션: 문서 시작 | rows: 3 | cols: 2]\n컬럼: col_1 | col_2\n그룹: 2024년 ｢벤처확인종합관리시스템 기능 고도화｣ 용역사업 / (복수의결권주식, 스톡옵션, 성과조건부주식) - / 제안요청서&quot;,
+  &quot;metadata&quot;: {
+    &quot;source_file&quot;: &quot;(사)벤처기업협회_2024년 벤처확인종합관리시스템 기능 고도화 용역사업 .hwp&quot;,
+    &quot;chunk_type&quot;: &quot;table&quot;,
+    &quot;section_path&quot;: &quot;문서 시작&quot;,
+    &quot;fact_type&quot;: &quot;&quot;,
+    &quot;amount_krw&quot;: &quot;&quot;,
+    &quot;budget_answer_enabled&quot;: &quot;&quot;,
+    &quot;answer_policy&quot;: &quot;&quot;
+  },
+  &quot;source_ref&quot;: {
+    &quot;source_store_id&quot;: &quot;src_doc_cf048e995a9d_table_table_0001_b7ab37ddf1f0&quot;,
+    &quot;block_id&quot;: &quot;Dcf048e995a_v2_table_0001&quot;,
+    &quot;part_index&quot;: 1,
+    &quot;content_hash&quot;: &quot;b7ab37ddf1f0&quot;,
+    &quot;evidence_id&quot;: &quot;EV_48d925a19f&quot;
+  }
+}</pre>
+    <h3>일반 텍스트(text) 예시</h3>
+    <pre>{
+  &quot;chunk_id&quot;: &quot;doc_cf048e995a9d_text_text_0001_part_001_6414d5edf122&quot;,
+  &quot;doc_id&quot;: &quot;doc_cf048e995a9d&quot;,
+  &quot;source_file&quot;: &quot;(사)벤처기업협회_2024년 벤처확인종합관리시스템 기능 고도화 용역사업 .hwp&quot;,
+  &quot;chunk_type&quot;: &quot;text&quot;,
+  &quot;embed_enabled&quot;: true,
+  &quot;content&quot;: &quot;[문서: (사)벤처기업협회_2024년 벤처확인종합관리시스템 기능 고도화 용역사업 .hwp | 사업명: 2024년 벤처확인종합관리시스템 기능 고도화 용역사업 | 발주기관: (사)벤처기업협회 | 섹션: 문서 시작 | 유형: text]\n2024. 03.\n□ 「벤처기업육성에 관한 특별조치법」(이하 ‘벤처기업법’) 복수의결권주식, 스톡옵션(주식매수선택권), 성과조건부주식교부계약(RS) 등의 기능 고도화 및 이관, 신규 구축업무를 本 과업에서 추진\n⚬*) 벤처기업법 제16조의11에 따라 발행된 복수의결권주식 보고 업무처리 시스템 구축\n* 복수의결권이란? 모든 주주는 1주당 하나의 의결권을 갖는 주주평등원칙(상법)과 별도로 비상장 벤처기업 창업자에게만 1주당 최대 10배의 의결권 행사를 부여하는 제도\n⚬*) 벤처기업법 제16조의3에 따라 부여된 벤처기업 스톡옵션 부여, 취소·철회 신고 및 업무시스템 구축\n* ...&quot;,
+  &quot;metadata&quot;: {
+    &quot;source_file&quot;: &quot;(사)벤처기업협회_2024년 벤처확인종합관리시스템 기능 고도화 용역사업 .hwp&quot;,
+    &quot;chunk_type&quot;: &quot;text&quot;,
+    &quot;section_path&quot;: &quot;문서 시작&quot;,
+    &quot;fact_type&quot;: &quot;&quot;,
+    &quot;amount_krw&quot;: &quot;&quot;,
+    &quot;budget_answer_enabled&quot;: &quot;&quot;,
+    &quot;answer_policy&quot;: &quot;&quot;
+  },
+  &quot;source_ref&quot;: {
+    &quot;source_store_id&quot;: &quot;src_doc_cf048e995a9d_text_text_0001_8aefc093fe7b&quot;,
+    &quot;block_id&quot;: &quot;Dcf048e995a_v2_text_0001&quot;,
+    &quot;part_index&quot;: 1,
+    &quot;content_hash&quot;: &quot;6414d5edf122&quot;,
+    &quot;evidence_id&quot;: &quot;EV_c51806d80f&quot;
+  }
+}</pre>
+
+    <h2>4. 주요 key 설명</h2>
+    <table>
+      <thead><tr><th>json key</th><th>의미</th></tr></thead>
+      <tbody><tr><td><code>chunk_id</code></td><td>검색 단위의 고유 식별자입니다. 크로마(Chroma)의 ids로 들어갑니다.</td></tr>
+<tr><td><code>content</code></td><td>실제로 임베딩(embedding)되는 검색용 텍스트입니다.</td></tr>
+<tr><td><code>metadata</code></td><td>필터와 해석에 필요한 짧은 정보입니다. 긴 원문은 넣지 않습니다.</td></tr>
+<tr><td><code>chunk_type</code></td><td>text, table, fact_candidates, toc 중 하나입니다.</td></tr>
+<tr><td><code>fact_type</code></td><td>project_budget, threshold_budget, requirements처럼 정보의 의미를 구분합니다.</td></tr>
+<tr><td><code>amount_krw</code></td><td>금액을 원 단위 숫자로 정규화한 값입니다.</td></tr>
+<tr><td><code>amount_type</code></td><td>금액의 의미입니다. project_budget과 threshold_budget을 구분합니다.</td></tr>
+<tr><td><code>budget_answer_enabled</code></td><td>예산 질문의 최종 답변에 써도 되는 금액인지 표시합니다.</td></tr>
+<tr><td><code>answer_policy</code></td><td>이 청크를 어떤 질문 유형에서 답변 근거로 쓸 수 있는지 적은 정책입니다.</td></tr>
+<tr><td><code>source_ref</code></td><td>검색 결과에서 원문 근거를 다시 찾기 위한 연결 정보입니다.</td></tr></tbody>
+    </table>
+
+    <h2>5. 이번 업데이트에서 특히 중요한 점</h2>
+    <table>
+      <thead><tr><th>구분</th><th>이전 위험</th><th>이번 보강</th></tr></thead>
+      <tbody>
+        <tr><td>금액</td><td>모든 금액이 사업예산처럼 보일 수 있음</td><td><code>amount_type</code>과 <code>budget_answer_enabled</code>로 답변 가능 여부를 분리</td></tr>
+        <tr><td>문서 요약</td><td><code>document_summary</code> 안의 숫자가 최종 답변으로 쓰일 위험</td><td>요약은 라우팅용으로 제한하고, 최종 예산은 typed fact를 우선</td></tr>
+        <tr><td>고차원 질문</td><td>사업범위, 배경, 요구사항 질문에서 근거가 흩어짐</td><td><code>project_scope</code>, <code>project_background</code>, <code>requirements</code> 청크 추가</td></tr>
+        <tr><td>표</td><td>표 안의 핵심 값이 긴 원문 속에 묻혀 검색 결과에서 약하게 잡힐 수 있음</td><td>표 안의 금액, 요구사항, 사업범위 같은 핵심 정보를 <code>fact_candidates</code>로 한 번 더 끌어올려 검색과 생성에서 쓰기 쉽게 보강</td></tr>
+        <tr><td>정책 key</td><td><code>answer_policy</code>, <code>budget_answer_enabled</code>는 데이터에만 있으면 자동 적용되지 않음</td><td>검색 결과를 LLM에 넘기기 전에 context builder 또는 prompt에서 이 값을 읽어 “최종 예산 답변에 쓸 수 있는 근거만 우선 사용”하도록 적용해야 함</td></tr>
+      </tbody>
+    </table>
+
+    <h2>6. metadata와 answer_policy는 어떻게 써야 하나</h2>
+    <h3>왜 금액 타입을 나눴나</h3>
+    <p>예를 들어 아래 세 문장은 모두 금액을 포함합니다.</p>
+    <pre>1. 사업예산: 1,515,000천원
+2. 최근 3년 이내 단일 실적 2억원 이상 보유
+3. 선금은 계약금액의 70% 이내 지급 가능</pre>
+
+    <p>사람이 보면 1번은 실제 사업예산, 2번은 입찰참가자격 기준금액, 3번은 지급조건이라는 걸 구분할 수 있습니다. 하지만 검색된 문장만 LLM에 그대로 넣으면, 2억원이나 70% 같은 숫자를 실제 사업예산처럼 잘못 답할 수 있습니다.</p>
+
+    <h3>금액 타입을 이렇게 세분화했습니다</h3>
+    <table>
+      <thead>
+        <tr><th>금액 타입</th><th>의미</th><th>사업예산 답변에 사용</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>project_budget</code></td><td>실제 사업예산으로 답변에 써도 되는 금액</td><td class="good">사용 가능</td></tr>
+        <tr><td><code>total_allocation</code></td><td>전체 배정액 또는 총액 성격의 금액</td><td class="good">질문 의도에 따라 사용 가능</td></tr>
+        <tr><td><code>threshold_budget</code></td><td>입찰참가자격, 실적 기준 등에 쓰이는 기준금액</td><td class="warn">사업예산으로 사용 금지</td></tr>
+        <tr><td><code>payment_terms</code></td><td>선금, 중도금, 잔금 같은 지급조건 금액</td><td class="warn">사업예산으로 사용 금지</td></tr>
+        <tr><td><code>estimated_price</code></td><td>추정가격</td><td class="warn">보조 근거로만 사용</td></tr>
+        <tr><td><code>base_amount</code></td><td>기초금액</td><td class="warn">보조 근거로만 사용</td></tr>
+      </tbody>
+    </table>
+
+    <div class="grid">
+      <div class="card">
+        <strong>project_budget</strong>
+        <p>실제 사업예산입니다. 예산 질문, 예산 비교, 차액 계산에 최종 답변 근거로 사용할 수 있습니다.</p>
+      </div>
+      <div class="card">
+        <strong>threshold_budget</strong>
+        <p>입찰참가자격이나 실적 기준에 쓰이는 금액입니다. 중요한 정보지만 사업예산 답변에는 쓰면 안 됩니다.</p>
+      </div>
+      <div class="card">
+        <strong>payment_terms</strong>
+        <p>선금, 중도금, 잔금 같은 지급조건입니다. 계약 조건 설명에는 필요하지만, 사업예산 답변에는 쓰면 안 됩니다.</p>
+      </div>
+    </div>
+
+
+    <p><code>metadata</code>는 크로마(Chroma)가 검색 결과와 함께 돌려주는 짧은 설명값입니다. 다만 이 값은 대형 언어 모델(LLM)이 자동으로 읽고 판단하는 값이 아닙니다.</p>
+    <div class="note"><b>핵심:</b> Chroma가 <code>documents</code>와 <code>metadatas</code>를 돌려주면, 우리 코드가 먼저 metadata를 읽고 질문 유형에 맞는 근거를 고른 뒤, 그 선택된 근거와 규칙을 prompt에 넣어야 합니다.</div>
+
+    <h3>검색 결과 record 예시</h3>
+    <pre>retrieved = {
+  "content": "사업예산 : 1,515,000천원 | KRW: 1515000000 | budget_type: project_budget",
+  "metadata": {
+    "source_file": "그랜드코리아레저(주)_2024년도 GKL 그룹웨어 시스템 구축 용역.hwp",
+    "chunk_type": "fact_candidates",
+    "fact_type": "project_budget",
+    "amount_krw": 1515000000,
+    "amount_type": "project_budget",
+    "answer_policy": "allow_as_project_budget",
+    "budget_answer_enabled": true
+  }
+}</pre>
+
+    <h3>질문 유형별로 이렇게 사용</h3>
+    <table>
+      <thead><tr><th>질문 유형</th><th>우선 사용할 key</th><th>주의할 key</th><th>이유</th></tr></thead>
+      <tbody>
+        <tr><td>사업예산/총액</td><td><code>fact_type=project_budget</code><br><code>budget_answer_enabled=true</code><br><code>answer_policy=allow_as_project_budget</code></td><td><code>threshold_budget</code>, <code>payment_terms</code></td><td>자격요건 기준금액이나 지급조건 금액을 실제 사업예산으로 답하면 오답이 됩니다.</td></tr>
+        <tr><td>차액/합산/비율</td><td><code>amount_krw</code><br><code>source_file</code><br><code>fact_type</code></td><td>LLM에게 숫자 계산을 전부 맡기는 방식</td><td>계산은 코드에서 하고, LLM은 계산 결과를 문장으로 정리하는 역할이 더 안전합니다.</td></tr>
+        <tr><td>입찰참가자격/실적 기준</td><td><code>threshold_budget</code><br><code>eligibility_answer_enabled=true</code></td><td><code>project_budget</code>만 단독 사용</td><td>자격요건 질문에서는 “최근 3년 2억원 이상” 같은 기준금액이 중요합니다.</td></tr>
+        <tr><td>지급조건</td><td><code>payment_terms</code><br><code>payment_answer_enabled=true</code></td><td><code>project_budget</code>로 최종 처리</td><td>선금, 중도금, 잔금은 전체 사업예산과 의미가 다릅니다.</td></tr>
+        <tr><td>사업범위/요구사항</td><td><code>project_scope</code><br><code>requirements</code><br><code>chunk_type=table</code></td><td>문서 식별용 <code>document_identity</code>만 사용</td><td>기관명, 사업명만으로는 실제 요구사항을 답하기 어렵습니다.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>context builder에서 적용하는 방식</h3>
+    <pre>def pick_context(question_type, retrieved_rows):
+    selected = []
+    for row in retrieved_rows:
+        meta = row["metadata"]
+
+        if question_type == "budget":
+            if meta.get("budget_answer_enabled") is True:
+                selected.append(row)
+            elif meta.get("fact_type") in ["threshold_budget", "payment_terms"]:
+                continue
+
+        elif question_type == "eligibility":
+            if meta.get("fact_type") in ["eligibility", "threshold_budget"]:
+                selected.append(row)
+
+        elif question_type == "requirements":
+            if meta.get("fact_type") in ["requirements", "project_scope"] or meta.get("chunk_type") == "table":
+                selected.append(row)
+
+    return selected</pre>
+
+    <h2>7. prompt에는 이렇게 넣는 것이 좋다</h2>
+    <p>LLM에게 JSONL 전체를 그대로 던지는 것이 아니라, 코드가 고른 근거와 해석 규칙을 같이 넘기는 방식이 안전합니다.</p>
+    <pre>[질문]
+GKL 그룹웨어 시스템 구축 용역의 사업예산은 얼마입니까?
+
+[선택된 근거]
+- evidence_id: EV_xxxx
+- source_file: 그랜드코리아레저(주)_2024년도 GKL 그룹웨어 시스템 구축 용역.hwp
+- fact_type: project_budget
+- amount_krw: 1515000000
+- answer_policy: allow_as_project_budget
+- content: 사업예산 : 1,515,000천원 | KRW: 1515000000 | budget_type: project_budget
+
+[답변 규칙]
+- 예산 질문에서는 budget_answer_enabled=true인 근거를 우선 사용한다.
+- threshold_budget은 입찰 자격 기준금액이므로 사업예산 최종값으로 쓰지 않는다.
+- payment_terms는 지급조건이므로 사업예산 최종값으로 쓰지 않는다.
+- amount_krw가 있으면 금액 계산에는 이 정규화 값을 우선 사용한다.
+- 근거가 부족하면 확인되지 않는다고 답한다.</pre>
+
+    <div class="note"><b>정리:</b> metadata에 정규화된 금액과 세분화된 금액 타입을 넣어둔 것은 맞습니다. 하지만 LLM이 자동으로 이해하는 것은 아니므로, context builder와 prompt에서 이 key를 명시적으로 사용해야 합니다.</div>
+
+    <h2>8. 검증 결과</h2>
+    <table>
+      <tbody>
+        <tr><th>중복 chunk_id</th><td class="good">0</td></tr>
+        <tr><th>근거 연결 누락</th><td class="good">0</td></tr>
+        <tr><th>예산 답변 가능 금액</th><td>99개</td></tr>
+        <tr><th>document_summary 금액 보호 처리</th><td>79개</td></tr>
+      </tbody>
+    </table>
+
+    <h2>9. 바로 실행할 노트북</h2>
+    <p><code>notebooks/rag/embedding_retrieval_eval_p4_hwpx_125_quickcheck_0525.ipynb</code>의 입력 경로를 <code>parsing_p4_hwpx_125_datafix_goalfix</code>로 바꿔두었습니다.</p>
+<p><code>answer_policy</code> 같은 정책 key는 자동으로 답변 품질을 올려주는 마법 값이 아닙니다. 검색 후 context를 고르는 코드나 생성 프롬프트에서 이 key를 읽어야 실제로 적용됩니다.</p>
+    <p>코랩(Colab)이나 지씨피(GCP)에서 실행할 때는 같은 폴더 구조로 <code>outputs/parsing_p4_hwpx_125_datafix_goalfix</code>를 올려두면 됩니다.</p>
+  </main>
+</body>
+</html>
