@@ -1,122 +1,75 @@
-# RAG Codeit Project - YSY 작업 브랜치 안내
+# RAG Codeit Project
 
-이 fork는 팀 공용 repo에 바로 섞지 않고, 개인 작업 브랜치를 분리해서 공유하기 위한 저장소입니다.
+공공/기업 RFP 문서를 기반으로 parsing, retrieval, generation 실험을 진행하는 프로젝트입니다.
 
-제가 작업한 RFP RAG 관련 파일은 제 fork의 YSY 브랜치에 통합해두었습니다. 
+GitHub에는 코드, 노트북, 재현용 스크립트, 설명 문서만 관리합니다. 원본 문서, 생성 corpus, Chroma DB, embedding cache, API key는 용량과 보안 문제로 올리지 않습니다.
 
-(확인하거나 테스트하실 분은`main`이 아니라 `YSY` 브랜치를 받아주세요!)
+## 현재 기준 브랜치
 
-일부 작업만 확인하고 싶으시면 hwp, parsing, evaluation, rag 중 필요한 브랜치만 checkout/pull 하시면 됩니다.
+```text
+main       저장소 안내 README
+parsing    RFP 원문 parsing, corpus 생성, 데이터 보정, validation/QC 스크립트
+rag        retrieval 및 generation 실행 노트북, generation 로직, RAG 실험 문서
+hwp        HWP 추출 검증 기록용 브랜치
+evaluation 평가 모듈 기록용 브랜치
+```
 
+이전 통합용 `YSY` 브랜치와 `generation-handoff-ysy` 브랜치는 현재 기준으로는 사용하지 않습니다. 작업 확인은 목적에 따라 `parsing` 또는 `rag` 브랜치를 기준으로 해주세요.
+
+## 추천 사용 기준
+
+### Corpus 생성/보정/검증
 
 ```bash
-git clone https://github.com/yoosy0125/chatbot.git
-cd chatbot
-git checkout YSY
+git checkout parsing
 ```
 
-이미 clone한 상태라면:
+주요 위치:
+
+```text
+src/parsing/
+notebooks/parsing/
+scripts/corpus/20260528/
+scripts/g2b/
+```
+
+`parsing` 브랜치는 원본 RFP에서 corpus를 만들고, 금액 역할 분류, 나라장터 보강, slim corpus 생성, validation/manifest/hash 검증까지 재현하기 위한 코드가 중심입니다.
+
+### Retrieval/Generation 실험
 
 ```bash
-git fetch origin
-git checkout YSY
-git pull origin YSY
+git checkout rag
 ```
 
-## 2026.05.18일 기준 포함된 내용
-
-HWP 텍스트 추출/아티팩트 제거, parsing phase1/phase2, v2_p2 JSONL 구조, 확장 평가 모듈, KoE5+Chroma R0~R6 retrieval 실험 노트북입니다.
-
-원본 RFP 데이터, outputs, Chroma DB, embedding cache, prediction JSONL, API key는 GitHub에 올리지 않았습니다.
-필요한 데이터/산출물은 별도 공유 드라이브에서 다운로드하시거나 제게 개별적으로 요청 부탁드립니다.
-
-## 브랜치 설명 요약
+주요 위치:
 
 ```text
-main       안내 README만 있는 브랜치
-YSY        최종 통합 작업 브랜치
-hwp        HWP 추출 작업 기록용
-parsing    파싱 작업 기록용
-evaluation 평가 작업 기록용
-rag        리트리벌 작업 기록용
+notebooks/rag/
+src/generation/
+docs/plans/
+docs/notes/
 ```
 
-## Branch Structure
+`rag` 브랜치는 Chroma/KoE5 기반 retrieval 실험, generation quickcheck, context builder 및 답변 생성 로직을 확인하는 기준 브랜치입니다.
+
+## GitHub에 포함하지 않는 것
 
 ```text
-yoosy0125/chatbot
-├─ main
-│  └─ 안내용 README만 유지
-│
-├─ YSY
-│  └─ 최종 통합 작업 브랜치
-│     ├─ 공통 README / requirements / .gitignore
-│     ├─ HWP 텍스트 추출 및 아티팩트 제거 검증
-│     ├─ RFP parsing phase1 / phase2
-│     ├─ v2_p2 JSONL corpus 설계
-│     ├─ 확장 retrieval 평가 모듈
-│     └─ KoE5 + Chroma R0~R6 retrieval 실험 노트북
-│
-├─ hwp
-│  └─ HWP 추출 작업 기록용 브랜치
-│
-├─ parsing
-│  └─ 파싱/JSONL corpus 생성 작업 기록용 브랜치
-│
-├─ evaluation
-│  └─ 평가 지표 확장 작업 기록용 브랜치
-│
-└─ rag
-   └─ 임베딩/리트리벌 실험 작업 기록용 브랜치
-```
-
-## YSY Branch Tree
-
-```text
-chatbot/
-├─ README.md
-├─ requirements.txt
-├─ .env.example
-├─ .gitignore
-├─ data/
-│  └─ README.md
-├─ docs/
-│  ├─ plans/
-│  │  ├─ plan.md
-│  │  └─ context_engineering_plan.md
-│  └─ notes/
-│     └─ tagging_experiment_share_note.md
-├─ notebooks/
-│  ├─ parsing/
-│  ├─ eval/
-│  └─ rag/
-└─ src/
-   └─ parsing/
-```
-
-## Included
-
-- HWP 텍스트 추출 및 아티팩트 제거 검증 노트북
-- RFP 문서 parsing phase1/phase2 노트북
-- JSONL key 설명 문서
-- P2 250개 corpus sanity check 노트북
-- 확장 retrieval 평가 스크립트
-- KoE5 + Chroma R0~R6 retrieval 실행 노트북
-- 재현용 README / requirements / `.env.example`
-
-## Not Included
-
-용량과 데이터 관리 문제로 아래 파일은 GitHub에 올리지 않았습니다.
-
-```text
-data 원본 RFP
+data/original_data_list/
+data/hwpx_664/
 outputs/
 Chroma DB
 embedding cache
 prediction JSONL
-retrieval_experiments.csv
 .env / API key
 zip 파일
+대용량 corpus JSONL / source_store JSONL
 ```
 
-필요한 데이터와 산출물은 별도 공유 드라이브에서 받아 로컬 또는 Colab/GCV 환경에 배치해야 합니다.
+필요한 원본 데이터와 corpus 산출물은 별도 공유 드라이브에서 받아 로컬, Colab, GCP 런타임에 배치해서 사용합니다.
+
+## 실행 시 주의
+
+- 실험용 embedding에는 slim corpus의 `chunks_v2_*.jsonl` 사용을 권장합니다.
+- `source_store_v2_*.jsonl`은 임베딩 대상이 아니라 generation 단계의 원문 확장/근거 확인용입니다.
+- corpus 생성 로직은 `parsing`, retrieval/generation 실험은 `rag` 기준으로 관리합니다.
